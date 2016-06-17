@@ -33,12 +33,13 @@ class TelegramTransport(HttpRpcTransport):
     TOKEN = CONFIG_CLASS.bot_token
     API_URL = 'https://api.telegram.com/bot'
 
+    @inlineCallbacks
     def setup_transport(self):
         URL = self.web_path + str(self.web_port)
 
         # Set up Webhook to receive Telegram updates for our bot
-        r = treq.post(self.API_URL + self.TOKEN +
-                      '/setWebhook?url=' + URL)
+        r = yield treq.post(self.API_URL + self.TOKEN +
+                            '/setWebhook?url=' + URL)
         response = json.loads(r.content)
 
         if not response['ok']:
@@ -122,8 +123,8 @@ class TelegramTransport(HttpRpcTransport):
             'text': message['content'],
             'reply_to_message_id': '',
         }
-        r = treq.post(self.API_URL + self.TOKEN + '/sendMessage',
-                      params=params)
+        r = yield treq.post(self.API_URL + self.TOKEN + '/sendMessage',
+                            params=params)
 
         response = json.loads(r.content)
 
