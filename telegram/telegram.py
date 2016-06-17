@@ -57,14 +57,6 @@ class TelegramTransport(HttpRpcTransport):
             log.info('Inbound update does not contain a message')
             return
 
-        # Ensure we are not receiving a duplicate request (ignore if that is
-        # the case)
-        if update_id in self.updates_received:
-            log.info('Received duplicate message: %s' % message_id)
-            return
-        else:
-            self.updates_received.append(update_id)
-
         message = self.translate_inbound_message(request['message'])
 
         log.info(
