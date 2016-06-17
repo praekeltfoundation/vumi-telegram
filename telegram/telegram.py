@@ -118,7 +118,7 @@ class TelegramTransport(HttpRpcTransport):
         r = yield treq.post(self.API_URL + self.TOKEN + '/sendMessage',
                             params=params)
 
-        response = json.loads(r.content)
+        response = yield json.loads(r.content)
 
         if response['ok']:
             yield self.publish_ack(
