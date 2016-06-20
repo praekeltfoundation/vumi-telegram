@@ -19,7 +19,7 @@ class TestTelegramTransport(VumiTestCase):
         self.fake_http = FakeHttpServer(self.handle_inbound_request)
         self.transport = yield self.get_transport()
 
-        self.bot_username = self.transport.CONFIG_CLASS.bot_username
+        self.bot_username = self.transport.get_static_config().bot_username
         self.default_vumi_msg = MessageHelper(
             transport_name=self.transport.transport_name,
             transport_type=self.transport.transport_type,
