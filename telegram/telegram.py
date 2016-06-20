@@ -38,7 +38,7 @@ class TelegramTransport(HttpRpcTransport):
 
     updates_received = []
 
-    API_URL = 'https://api.telegram.com/bot'
+    API_URL = 'https://api.telegram.org/bot'
 
     @classmethod
     def agent_factory(cls):
