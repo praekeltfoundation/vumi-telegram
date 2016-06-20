@@ -35,7 +35,7 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def setup_transport(self):
-        URL = self.web_path + str(self.web_port)
+        URL = self.CONFIG_CLASS.web_path + str(self.CONFIG_CLASS.web_port)
 
         # Set up Webhook to receive Telegram updates for our bot
         r = yield treq.post(self.API_URL + self.TOKEN +
