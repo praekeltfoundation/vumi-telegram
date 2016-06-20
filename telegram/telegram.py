@@ -11,11 +11,13 @@ from vumi import log
 class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
     bot_username = ConfigText(
         'The username of our Telegram bot',
-        required=True
+        static=True,
+        required=True,
     )
     bot_token = ConfigText(
         "Our bot's unique token to access the Telegram API",
-        required=True
+        static=True,
+        required=True,
     )
 
 
@@ -30,12 +32,15 @@ class TelegramTransport(HttpRpcTransport):
 
     updates_received = []
 
-    TOKEN = CONFIG_CLASS.bot_token
     API_URL = 'https://api.telegram.com/bot'
 
     @inlineCallbacks
     def setup_transport(self):
-        URL = self.CONFIG_CLASS.web_path + str(self.CONFIG_CLASS.web_port)
+        self.TOKEN = self.get_static_config().bot_token
+        self.bot_username = self.get_static_config().bot_username
+
+        URL = (self.get_static_config().web_path +
+               str(self.get_static_config().web_port))
 
         # Set up Webhook to receive Telegram updates for our bot
         r = yield treq.post(self.API_URL + self.TOKEN +
@@ -86,7 +91,7 @@ class TelegramTransport(HttpRpcTransport):
             log.info('Message is not a text message.')
             content = ''
 
-        to_addr = self.CONFIG_CLASS.bot_username
+        to_addr = self.bot_username
 
         # Sender field is empty if message is sent over a Telegram channel as
         # opposed to being directly sent to our bot (in which case the channel
