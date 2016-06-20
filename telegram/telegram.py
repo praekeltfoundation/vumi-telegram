@@ -19,6 +19,9 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         static=True,
         required=True,
     )
+    base_url = ConfigText(
+        'The base URL of our transport', static=True, required=True,
+    )
 
 
 class TelegramTransport(HttpRpcTransport):
@@ -39,8 +42,7 @@ class TelegramTransport(HttpRpcTransport):
         self.TOKEN = self.get_static_config().bot_token
         self.bot_username = self.get_static_config().bot_username
 
-        URL = (self.get_static_config().web_path +
-               str(self.get_static_config().web_port))
+        URL = self.get_static_config().base_url
 
         # Set up Webhook to receive Telegram updates for our bot
         r = yield treq.post(self.API_URL + self.TOKEN +
