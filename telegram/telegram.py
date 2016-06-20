@@ -1,7 +1,10 @@
 import json
-import treq
 
+from treq.client import HTTPClient
+
+from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
+from twisted.web.client import Agent
 
 from vumi.transports.httprpc import HttpRpcTransport
 from vumi.config import ConfigText
@@ -37,16 +40,23 @@ class TelegramTransport(HttpRpcTransport):
 
     API_URL = 'https://api.telegram.com/bot'
 
+    @classmethod
+    def agent_factory(cls):
+        """For swapping out the Agent for use in tests"""
+        return Agent(reactor)
+
     @inlineCallbacks
     def setup_transport(self):
         self.TOKEN = self.get_static_config().bot_token
         self.bot_username = self.get_static_config().bot_username
+        self.http_client = HTTPClient(self.agent_factory())
 
         URL = self.get_static_config().base_url
 
         # Set up Webhook to receive Telegram updates for our bot
-        r = yield treq.post(self.API_URL + self.TOKEN +
-                            '/setWebhook?url=' + URL)
+        r = yield self.http_client.post(self.API_URL + self.TOKEN +
+                                        '/setWebhook?url=' + URL)
+
         response = json.loads(r.content)
 
         if not response['ok']:
@@ -122,8 +132,8 @@ class TelegramTransport(HttpRpcTransport):
             'text': message['content'],
             'reply_to_message_id': '',
         }
-        r = yield treq.post(self.API_URL + self.TOKEN + '/sendMessage',
-                            params=params)
+        r = yield self.http_client.post(self.API_URL + self.TOKEN +
+                                        '/sendMessage', params=params)
 
         response = yield json.loads(r.content)
 

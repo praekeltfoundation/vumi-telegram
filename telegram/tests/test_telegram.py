@@ -1,8 +1,9 @@
 import json
 
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 
 from vumi.tests.helpers import VumiTestCase, MessageHelper
+from vumi.tests.fake_connection import FakeHttpServer
 from vumi.transports.httprpc.tests.helpers import HttpRpcTransportHelper
 
 from telegram.telegram import TelegramTransport
@@ -15,23 +16,36 @@ class TestTelegramTransport(VumiTestCase):
         self.helper = self.add_helper(
             HttpRpcTransportHelper(TelegramTransport)
         )
-        self.transport = yield self.helper.get_transport({
-            'bot_username': '@bot',
-            'bot_token': '1234',
-        })
+        self.fake_http = FakeHttpServer(self.handle_inbound_request)
+        self.transport = yield self.get_transport()
 
         self.bot_username = self.transport.CONFIG_CLASS.bot_username
-
         self.default_vumi_msg = MessageHelper(
             transport_name=self.transport.transport_name,
             transport_type=self.transport.transport_type,
             mobile_addr=self.user,
             transport_addr=self.bot_username,
         )
-
         self.default_user = json.dumps({
             'id': 'Default user',
         })
+
+    @inlineCallbacks
+    def get_transport(self, **config):
+        defaults = {
+            'bot_username': '@bot',
+            'bot_token': '1234',
+            'base_url': 'www.example.com',
+        }
+        defaults.update(config)
+        transport = yield self.helper.get_transport(defaults)
+
+        transport.agent_factory = self.fake_http.get_agent
+        returnValue(transport)
+
+    def handle_inbound_request(self, request):
+        # TODO: handle inbound requests
+        pass
 
     def test_translate_inbound_message_from_channel(self):
         default_channel = json.dumps({
