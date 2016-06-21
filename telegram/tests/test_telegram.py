@@ -1,5 +1,3 @@
-import json
-
 from twisted.internet.defer import inlineCallbacks, returnValue
 
 from vumi.tests.helpers import VumiTestCase, MessageHelper
@@ -19,16 +17,16 @@ class TestTelegramTransport(VumiTestCase):
         self.fake_http = FakeHttpServer(self.handle_inbound_request)
         self.transport = yield self.get_transport()
 
+        self.default_user = {
+            'id': 'Default user',
+        }
         self.bot_username = self.transport.get_static_config().bot_username
         self.default_vumi_msg = MessageHelper(
             transport_name=self.transport.transport_name,
             transport_type=self.transport.transport_type,
-            mobile_addr=self.user,
+            mobile_addr=self.default_user['id'],
             transport_addr=self.bot_username,
         )
-        self.default_user = json.dumps({
-            'id': 'Default user',
-        })
 
     @inlineCallbacks
     def get_transport(self, **config):
@@ -36,6 +34,7 @@ class TestTelegramTransport(VumiTestCase):
             'bot_username': '@bot',
             'bot_token': '1234',
             'base_url': 'www.example.com',
+            'web_path': '/foo',
         }
         defaults.update(config)
         transport = yield self.helper.get_transport(defaults)
@@ -48,16 +47,16 @@ class TestTelegramTransport(VumiTestCase):
         pass
 
     def test_translate_inbound_message_from_channel(self):
-        default_channel = json.dumps({
+        default_channel = {
             'id': 'Default channel',
             'type': 'channel',
-        })
+        }
 
-        inbound_msg = json.dumps({
+        inbound_msg = {
             'message_id': 'Message from Telegram channel',
-            'chat': self.default_channel,
+            'chat': default_channel,
             'text': 'Hi from Telegram channel!',
-        })
+        }
 
         message = self.transport.translate_inbound_message(inbound_msg)
 
@@ -66,12 +65,12 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(default_channel['id'], message['from_addr'])
 
     def test_translate_inbound_message_from_user(self):
-        inbound_msg = json.dumps({
+        inbound_msg = {
             'message_id': 'Message from Telegram user',
             'chat': 'Random chat',
             'text': 'Hi from Telegram user!',
             'from': self.default_user,
-        })
+        }
 
         message = self.transport.translate_inbound_message(inbound_msg)
 
@@ -80,11 +79,11 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(self.default_user['id'], message['from_addr'])
 
     def test_translate_inbound_message_no_text(self):
-        inbound_msg = json.dumps({
+        inbound_msg = {
             'message_id': 'Message without text',
             'chat': 'Random chat',
             'from': self.default_user,
-        })
+        }
 
         message = self.transport.translate_inbound_message(inbound_msg)
 
