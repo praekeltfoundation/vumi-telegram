@@ -5,6 +5,8 @@ from treq.client import HTTPClient
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from twisted.web.client import Agent
+from twisted.web.resource import Resource
+from twisted.web._newclient import ResponseFailed
 
 from vumi.transports.httprpc import HttpRpcTransport
 from vumi.config import ConfigText
@@ -27,6 +29,14 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
     )
 
 
+class TelegramResource(Resource):
+    isLeaf = True
+
+    def __init__(self, transport):
+        self.transport = transport
+        Resource.__init__(self)
+
+
 class TelegramTransport(HttpRpcTransport):
     """
     Telegram transport for Vumi
@@ -36,6 +46,7 @@ class TelegramTransport(HttpRpcTransport):
 
     CONFIG_CLASS = TelegramTransportConfig
 
+    # TODO: ensure we are not receiving duplicate updates
     updates_received = []
 
     API_URL = 'https://api.telegram.org/bot'
@@ -46,22 +57,40 @@ class TelegramTransport(HttpRpcTransport):
         return Agent(reactor)
 
     @inlineCallbacks
+    def setup_webhook(self):
+        config = self.get_static_config()
+        URL = config.base_url + config.web_path
+        query_string = self.API_URL + self.TOKEN + '/setWebhook?url=' + URL
+
+        try:
+            r = yield self.http_client.post(query_string)
+            response = yield json.loads(r.content)
+        except ResponseFailed:
+            pass
+            # It seems that if our request contains invalid params, Telegram
+            # redirects to the Bot API page instead of sending a proper
+            # response, which throws HTTPClient for a loop.
+            # TODO: handle page redirect, as well as other possible exceptions
+
+    @inlineCallbacks
     def setup_transport(self):
-        self.TOKEN = self.get_static_config().bot_token
-        self.bot_username = self.get_static_config().bot_username
+        yield super(TelegramTransport, self).setup_transport
+
+        config = self.get_static_config()
+        self.TOKEN = config.bot_token
+        self.bot_username = config.bot_username
+        self.web_path = config.web_path
+        self.web_port = config.web_port
         self.http_client = HTTPClient(self.agent_factory())
+        self.rpc_resource = TelegramResource(self)
 
-        URL = self.get_static_config().base_url
+        self.web_resource = yield self.start_web_resources(
+            [
+                (self.rpc_resource, self.web_path),
+            ],
+            self.web_port)
 
-        # Set up Webhook to receive Telegram updates for our bot
-        r = yield self.http_client.post(self.API_URL + self.TOKEN +
-                                        '/setWebhook?url=' + URL)
-
-        response = json.loads(r.content)
-
-        if not response['ok']:
-            log.info('Error setting up Webhook: %s' % response['description'])
-            # TODO: handle this error somehow
+        yield self.setup_webhook()
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
@@ -81,7 +110,7 @@ class TelegramTransport(HttpRpcTransport):
                 message['from_addr'], message['to_addr']))
 
         # No need to keep request open
-        self.finish_request(message_id, '')
+        self.finish_request(message_id, data='', code=200)
 
         yield self.publish_message(
             message_id=message_id,
@@ -132,9 +161,10 @@ class TelegramTransport(HttpRpcTransport):
             'text': message['content'],
             'reply_to_message_id': '',
         }
-        r = yield self.http_client.post(self.API_URL + self.TOKEN +
-                                        '/sendMessage', params=params)
+        query_string = self.API_URL + self.TOKEN + '/sendMessage'
+        r = yield self.http_client.post(query_string, params=params)
 
+        # TODO: handle possible errors where responses are not JSON objects
         response = yield json.loads(r.content)
 
         if response['ok']:
@@ -145,3 +175,7 @@ class TelegramTransport(HttpRpcTransport):
         else:
             yield self.publish_nack(message_id, 'Failed to send message: %s' %
                                     response['description'])
+
+    @inlineCallbacks
+    def teardown_transport(self):
+        yield self.web_resource.loseConnection()
