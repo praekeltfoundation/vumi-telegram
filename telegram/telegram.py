@@ -162,12 +162,17 @@ class TelegramTransport(HttpRpcTransport):
             'reply_to_message_id': '',
         }
         query_string = self.API_URL + self.TOKEN + '/sendMessage'
-        r = yield self.http_client.post(query_string, params=params)
 
-        # TODO: handle possible errors where responses are not JSON objects
-        response = yield json.loads(r.content)
+        try:
+            r = yield self.http_client.post(query_string, params=params)
+            # TODO: handle possible errors where responses are not JSON objects
+            response = yield json.loads(r.content)
+        except ResponseFailed:
+            # TODO: Handle page redirect in event of our request being denied
+            # This is a temporary fix for now
+            response = {'ok': False, 'description': 'Page redirect', }
 
-        if response['ok']:
+        if response['ok'] and response.code == 200:
             yield self.publish_ack(
                 user_message_id=message_id,
                 sent_message_id=message_id,
