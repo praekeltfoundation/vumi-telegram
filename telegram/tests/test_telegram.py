@@ -121,7 +121,7 @@ class TestTelegramTransport(VumiTestCase):
             }
         })
         yield http_request(
-            self.transport_url + 'foo', telegram_update, method='GET'
+            self.transport_url + 'foo', telegram_update, method='POST'
         )
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
 
