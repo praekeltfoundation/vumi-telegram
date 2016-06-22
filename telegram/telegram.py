@@ -24,9 +24,6 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         static=True,
         required=True,
     )
-    base_url = ConfigText(
-        'The base URL of our transport', static=True, required=True,
-    )
 
 
 class TelegramResource(Resource):
@@ -35,6 +32,14 @@ class TelegramResource(Resource):
     def __init__(self, transport):
         self.transport = transport
         Resource.__init__(self)
+
+    @inlineCallbacks
+    def render_POST(self, request, request_id=None):
+        if request_id is None:
+            pass
+            # TODO: generate a request id somehow
+        self.transport.handle_raw_inbound_message(request_id, request)
+        return ''
 
 
 class TelegramTransport(HttpRpcTransport):
@@ -59,7 +64,8 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def setup_webhook(self):
         config = self.get_static_config()
-        URL = config.base_url + config.web_path
+        addr = self.web_resource.getHost()
+        URL = addr.host + str(addr.port) + self.web_path
         query_string = self.API_URL + self.TOKEN + '/setWebhook?url=' + URL
 
         try:
@@ -94,7 +100,7 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
-        request = json.loads(request)
+        request = json.loads(request.content)
         update_id = request['update_id']
 
         # Telegram updates can contain objects other than messages (ignore if
@@ -110,7 +116,7 @@ class TelegramTransport(HttpRpcTransport):
                 message['from_addr'], message['to_addr']))
 
         # No need to keep request open
-        self.finish_request(message_id, data='', code=200)
+        request.finish()
 
         yield self.publish_message(
             message_id=message_id,
