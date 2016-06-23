@@ -1,11 +1,11 @@
 import json
 
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredQueue
-from twisted.web import http
+from twisted.web.server import NOT_DONE_YET
 
 from vumi.tests.helpers import VumiTestCase, MessageHelper
 from vumi.tests.fake_connection import FakeHttpServer
-from vumi.utils import http_request
+from vumi.tests.utils import LogCatcher
 from vumi.transports.httprpc.tests.helpers import HttpRpcTransportHelper
 
 from telegram.telegram import TelegramTransport
@@ -18,7 +18,8 @@ class TestTelegramTransport(VumiTestCase):
         self.helper = self.add_helper(
             HttpRpcTransportHelper(TelegramTransport)
         )
-        self.fake_http = FakeHttpServer(self.handle_inbound_request)
+        self.pending_requests = DeferredQueue()
+        self.mock_server = FakeHttpServer(self.handle_inbound_request)
         self.transport = yield self.get_transport()
 
         self.default_user = {
@@ -32,10 +33,9 @@ class TestTelegramTransport(VumiTestCase):
             mobile_addr=self.default_user['id'],
             transport_addr=self.bot_username,
         )
-        self.pending_requests = DeferredQueue()
 
         addr = self.transport.web_resource.getHost()
-        self.transport_url = 'http://%s/%s/' % (addr.host, addr.port)
+        self.transport_url = 'http://%s:%s/' % (addr.host, addr.port)
 
         # Telegram chat types
         self.PRIVATE = 'private'
@@ -46,19 +46,18 @@ class TestTelegramTransport(VumiTestCase):
     def get_transport(self, **config):
         defaults = {
             'bot_username': '@bot',
-            'bot_token': '1234',
+            'bot_token': '',
             'web_path': 'foo',
             'web_port': 0,
         }
         defaults.update(config)
         transport = yield self.helper.get_transport(defaults)
-
-        transport.agent_factory = self.fake_http.get_agent
+        transport.agent_factory = self.mock_server.get_agent
         returnValue(transport)
 
     def handle_inbound_request(self, request):
         self.pending_requests.put(request)
-        return
+        return NOT_DONE_YET
 
     def test_translate_inbound_message_from_channel(self):
         default_channel = {
@@ -120,9 +119,7 @@ class TestTelegramTransport(VumiTestCase):
                 'text': 'Incoming message from Telegram!',
             }
         })
-        yield http_request(
-            self.transport_url + 'foo', telegram_update, method='POST'
-        )
+        yield self.helper.mk_request(_method='POST', _data=telegram_update)
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
 
         expected_update = json.loads(telegram_update)
@@ -135,37 +132,42 @@ class TestTelegramTransport(VumiTestCase):
                          self.transport.transport_name)
 
     @inlineCallbacks
-    def test_valid_outbound(self):
-        yield self.helper.make_dispatch_outbound(
+    def test_valid_outbound_message(self):
+        msg = yield self.helper.make_dispatch_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id'],
         )
 
-        # request = yield self.pending_requests.get()
-        # self.assertEqual(request.method, 'POST')
-        # TODO: finish this test
+        req = yield self.pending_requests.get()
+        self.assertEqual(req.method, 'POST')
+
+        outbound_msg = json.loads(req.content.read())
+        self.assertEqual(outbound_msg['text'], 'Outbound message!')
+        self.assertEqual(outbound_msg['chat_id'], self.default_user['id'])
+
+        req.finish()
+
+        [ack] = yield self.helper.wait_for_dispatched_events(1)
+
+        self.assertEqual(ack['event_type'], 'ack')
+        self.assertEqual(ack['user_message_id'], msg['message_id'])
+        self.assertEqual(ack['sent_message_id'], msg['message_id'])
 
     @inlineCallbacks
     def test_invalid_outbound_message(self):
-        # NB: test passes even though message is valid due to issues with our
-        # POST request in the transport's handle_outbound function. When those
-        # are sorted out, the code commented out below should be executed
-        msg_d = self.helper.make_dispatch_outbound(
+        msg = yield self.helper.make_dispatch_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id']
         )
 
-        # request = yield self.pending_requests.get()
-        # request.setResponseCode(http.BAD_REQUEST)
-        # request.finish()
+        req = yield self.pending_requests.get()
+        req.write(
+            json.dumps({'ok': False, 'description': 'Invalid request'})
+        )
+        req.finish()
 
-        msg = yield msg_d
         [nack] = yield self.helper.wait_for_dispatched_events(1)
 
         self.assertEqual(nack['event_type'], 'nack')
         self.assertEqual(nack['user_message_id'], msg['message_id'])
-
-        # NB: hardcoding the expected reason for now to get tests passing, but
-        # in reality it should be equal to the 'description' field in the
-        # response Telegram sends to unsucessful requests
-        # self.assertEqual(nack['reason'], 'Page redirect')
+        self.assertEqual(nack['reason'], 'Invalid request')
