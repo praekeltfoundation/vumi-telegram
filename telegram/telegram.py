@@ -168,13 +168,12 @@ class TelegramTransport(HttpRpcTransport):
         params = {
             'chat_id': message['to_addr'],
             'text': message['content'],
-            'reply_to_message_id': '',
         }
         url = self.outbound_url + '/sendMessage'
         http_client = HTTPClient(self.agent_factory())
 
         try:
-            r = yield http_client.post(url, params=params)
+            r = yield http_client.post(url, data=params)
             # TODO: handle possible errors where responses are not JSON objects
             content = yield r.content()
             response = json.loads(content)
