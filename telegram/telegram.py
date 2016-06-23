@@ -8,7 +8,7 @@ from twisted.web.client import Agent
 from twisted.web.resource import Resource
 from twisted.web._newclient import ResponseFailed
 
-from vumi.transports.httprpc import HttpRpcTransport
+from vumi.transports.httprpc.httprpc import HttpRpcTransport, HttpRpcResource
 from vumi.config import ConfigText
 from vumi import log
 
@@ -24,17 +24,20 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         static=True,
         required=True,
     )
+    outbound_url = ConfigText(
+        'The URL our bot should make requests to',
+        default='https://api.telegram.org/bot', static=True,
+    )
 
 
-class TelegramResource(Resource):
+class TelegramResource(HttpRpcResource):
     isLeaf = True
 
     def __init__(self, transport):
         self.transport = transport
         Resource.__init__(self)
 
-    @inlineCallbacks
-    def render_POST(self, request, request_id=None):
+    def render(self, request, request_id=None):
         if request_id is None:
             pass
             # TODO: generate a request id somehow
@@ -49,12 +52,12 @@ class TelegramTransport(HttpRpcTransport):
     transport_type = 'telegram'
     transport_name = 'telegram_transport'
 
+    _requests = {}
+
     CONFIG_CLASS = TelegramTransportConfig
 
     # TODO: ensure we are not receiving duplicate updates
     updates_received = []
-
-    API_URL = 'https://api.telegram.org/bot'
 
     @classmethod
     def agent_factory(cls):
@@ -65,12 +68,14 @@ class TelegramTransport(HttpRpcTransport):
     def setup_webhook(self):
         config = self.get_static_config()
         addr = self.web_resource.getHost()
-        URL = addr.host + str(addr.port) + self.web_path
-        query_string = self.API_URL + self.TOKEN + '/setWebhook?url=' + URL
+        inbound_url = addr.host + str(addr.port) + self.web_path
+        query_string = self.outbound_url + '/setWebhook?url=' + inbound_url
+
+        http_client = HTTPClient(self.agent_factory())
 
         try:
-            r = yield self.http_client.post(query_string)
-            response = yield json.loads(r.content)
+            r = yield http_client.post(query_string)
+            response = yield json.loads(r.content())
         except ResponseFailed:
             pass
             # It seems that if our request contains invalid params, Telegram
@@ -83,11 +88,10 @@ class TelegramTransport(HttpRpcTransport):
         yield super(TelegramTransport, self).setup_transport
 
         config = self.get_static_config()
-        self.TOKEN = config.bot_token
+        self.outbound_url = config.outbound_url + config.bot_token
         self.bot_username = config.bot_username
         self.web_path = config.web_path
         self.web_port = config.web_port
-        self.http_client = HTTPClient(self.agent_factory())
         self.rpc_resource = TelegramResource(self)
 
         self.web_resource = yield self.start_web_resources(
@@ -100,23 +104,23 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
-        request = json.loads(request.content)
-        update_id = request['update_id']
+        content = json.loads(request.content.read())
+        update_id = content['update_id']
 
         # Telegram updates can contain objects other than messages (ignore if
         # that is the case)
-        if 'message' not in request:
+        if 'message' not in content:
             log.info('Inbound update does not contain a message')
             return
 
-        message = self.translate_inbound_message(request['message'])
+        message = self.translate_inbound_message(content['message'])
 
         log.info(
             'TelegramTransport receiving inbound message from %s to %s' % (
                 message['from_addr'], message['to_addr']))
 
-        # No need to keep request open
-        request.finish()
+        # This throws off the tests for some reason
+        # request.finish()
 
         yield self.publish_message(
             message_id=message_id,
@@ -161,24 +165,25 @@ class TelegramTransport(HttpRpcTransport):
         message_id = message['message_id']
 
         # TODO: handle direct replies
-        # Will need to be able to find Telegram message_id of original message
         params = {
             'chat_id': message['to_addr'],
             'text': message['content'],
             'reply_to_message_id': '',
         }
-        query_string = self.API_URL + self.TOKEN + '/sendMessage'
+        url = self.outbound_url + '/sendMessage'
+        http_client = HTTPClient(self.agent_factory())
 
         try:
-            r = yield self.http_client.post(query_string, params=params)
+            r = yield http_client.post(url, params=params)
             # TODO: handle possible errors where responses are not JSON objects
-            response = yield json.loads(r.content)
+            content = yield r.content()
+            response = json.loads(content)
         except ResponseFailed:
             # TODO: Handle page redirect in event of our request being denied
             # This is a temporary fix for now
             response = {'ok': False, 'description': 'Page redirect', }
 
-        if response['ok'] and response.code == 200:
+        if response['ok']:
             yield self.publish_ack(
                 user_message_id=message_id,
                 sent_message_id=message_id,
