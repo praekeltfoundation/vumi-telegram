@@ -3,7 +3,9 @@ import urllib
 
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredQueue
 from twisted.web.server import NOT_DONE_YET
+from twisted.web import http
 
+from vumi.tests.utils import LogCatcher
 from vumi.tests.helpers import VumiTestCase
 from vumi.tests.fake_connection import FakeHttpServer
 from vumi.transports.httprpc.tests.helpers import HttpRpcTransportHelper
@@ -111,7 +113,7 @@ class TestTelegramTransport(VumiTestCase):
         })
         res = yield self.helper.mk_request(_method='POST',
                                            _data=default_update)
-        self.assertEqual(res.code, 200)
+        self.assertEqual(res.code, http.OK)
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
 
@@ -123,6 +125,37 @@ class TestTelegramTransport(VumiTestCase):
                          self.transport.transport_type)
         self.assertEqual(msg['transport_name'],
                          self.transport.transport_name)
+
+    @inlineCallbacks
+    def test_inbound_non_message_update(self):
+        update = json.dumps({
+            'update_id': 'update_id',
+            'object': 'This is not a message...',
+        })
+        d = self.helper.mk_request(_method='POST', _data=update)
+
+        with LogCatcher(message='message') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Inbound update does not contain a message')
+        self.assertEqual(res.code, http.OK)
+
+    @inlineCallbacks
+    def test_inbound_non_text_message(self):
+        update = json.dumps({
+            'update_id': 'update_id',
+            'message': {
+                'message_id': 'msg_id',
+                'object': 'This is not a text message...'
+            }
+        })
+        d = self.helper.mk_request(_method='POST', _data=update)
+
+        with LogCatcher(message='text') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Message is not a text message')
+        self.assertEqual(res.code, http.OK)
 
     def query_string_to_dict(self, query_string):
         output = {}

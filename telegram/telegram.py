@@ -93,10 +93,10 @@ class TelegramTransport(HttpRpcTransport):
         # that is the case)
         if 'message' not in update:
             log.info('Inbound update does not contain a message')
+            request.finish()
             return
         else:
             message = update['message']
-        request.finish()
 
         if 'text' in message:
             message = self.translate_inbound_message(update['message'])
@@ -114,7 +114,8 @@ class TelegramTransport(HttpRpcTransport):
             )
         else:
             log.info('Message is not a text message')
-            return
+
+        request.finish()
 
     def translate_inbound_message(self, message):
         """
