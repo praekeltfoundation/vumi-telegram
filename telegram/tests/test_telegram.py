@@ -94,18 +94,6 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(self.bot_username, message['to_addr'])
         self.assertEqual(self.default_user['id'], message['from_addr'])
 
-    def test_translate_inbound_message_no_text(self):
-        inbound_msg = {
-            'message_id': 'Message without text',
-            'chat': 'Random chat',
-            'from': self.default_user,
-        }
-
-        message = self.transport.translate_inbound_message(inbound_msg)
-        self.assertEqual('', message['content'])
-        self.assertEqual(self.bot_username, message['to_addr'])
-        self.assertEqual(self.default_user['id'], message['from_addr'])
-
     @inlineCallbacks
     def test_inbound_update(self):
         default_update = json.dumps({

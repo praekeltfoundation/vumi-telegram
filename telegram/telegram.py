@@ -94,33 +94,33 @@ class TelegramTransport(HttpRpcTransport):
         if 'message' not in update:
             log.info('Inbound update does not contain a message')
             return
-
-        message = self.translate_inbound_message(update['message'])
-        log.info(
-            'TelegramTransport receiving inbound message from %s to %s' % (
-                message['from_addr'], message['to_addr']))
-
+        else:
+            message = update['message']
         request.finish()
-        yield self.publish_message(
-            message_id=message_id,
-            content=message['content'],
-            to_addr=message['to_addr'],
-            from_addr=message['from_addr'],
-            transport_type=self.transport_type,
-            transport_name=self.transport_name,
-        )
+
+        if 'text' in message:
+            message = self.translate_inbound_message(update['message'])
+            log.info(
+                'TelegramTransport receiving inbound message from %s to %s' % (
+                    message['from_addr'], message['to_addr']))
+
+            yield self.publish_message(
+                message_id=message_id,
+                content=message['content'],
+                to_addr=message['to_addr'],
+                from_addr=message['from_addr'],
+                transport_type=self.transport_type,
+                transport_name=self.transport_name,
+            )
+        else:
+            log.info('Message is not a text message')
+            return
 
     def translate_inbound_message(self, message):
         """
         Translates inbound Telegram message into Vumi's preferred format
         """
-        # We are only interested in text messages for now
-        if 'text' in message:
-            content = message['text']
-        else:
-            log.info('Message is not a text message.')
-            content = ''
-
+        content = message['text']
         to_addr = self.bot_username
         # Sender field is empty if message is sent over a Telegram channel as
         # opposed to being directly sent to our bot (in which case the channel
