@@ -155,21 +155,6 @@ class TestTelegramTransport(VumiTestCase):
             self.assertEqual(log, 'Message is not a text message')
         self.assertEqual(res.code, http.OK)
 
-    def query_string_to_dict(self, query_string):
-        output = {}
-        query_string = urllib.unquote_plus(query_string)
-        params = query_string.split('&')
-        for param in params:
-            [key, value] = param.split('=')
-            output[key] = value
-        return output
-
-    def test_query_string_to_dict(self):
-        query_string = 'param=one&nextparam=one+two'
-        expected_dict = {'param': 'one', 'nextparam': 'one two'}
-        self.assertEqual(expected_dict,
-                         self.query_string_to_dict(query_string))
-
     @inlineCallbacks
     def test_valid_outbound_message(self):
         msg = self.helper.make_outbound(
@@ -182,10 +167,7 @@ class TestTelegramTransport(VumiTestCase):
         req = yield self.get_next_request()
         self.assertEqual(req.method, 'POST')
 
-        # NOTE: this is a temporary workaround, since treq doesn't let us
-        # post data in the request body, preferring instead to automatically
-        # encode any parameters as a query string
-        outbound_msg = self.query_string_to_dict(req.content.read())
+        outbound_msg = json.loads(req.content.read())
         self.assertEqual(outbound_msg['text'], 'Outbound message!')
         self.assertEqual(outbound_msg['chat_id'], self.default_user['id'])
 
