@@ -6,7 +6,6 @@ from twisted.web.server import NOT_DONE_YET
 
 from vumi.tests.helpers import VumiTestCase, MessageHelper
 from vumi.tests.fake_connection import FakeHttpServer
-from vumi.tests.utils import LogCatcher
 from vumi.transports.httprpc.tests.helpers import HttpRpcTransportHelper
 
 from telegram.telegram import TelegramTransport
@@ -30,15 +29,6 @@ class TestTelegramTransport(VumiTestCase):
             'username': '@default_user',
         }
         self.bot_username = self.transport.get_static_config().bot_username
-        self.default_vumi_msg = MessageHelper(
-            transport_name=self.transport.transport_name,
-            transport_type=self.transport.transport_type,
-            mobile_addr=self.default_user['id'],
-            transport_addr=self.bot_username,
-        )
-
-        addr = self.transport.web_resource.getHost()
-        self.transport_url = 'http://%s:%s/' % (addr.host, addr.port)
 
         # Telegram chat types
         self.PRIVATE = 'private'
@@ -52,14 +42,15 @@ class TestTelegramTransport(VumiTestCase):
             'bot_token': '',
             'web_path': 'foo',
             'web_port': 0,
+            'inbound_url': 'www.example.com'
         }
         defaults.update(config)
         transport = yield self.helper.get_transport(defaults)
         transport.agent_factory = self.mock_server.get_agent
         returnValue(transport)
 
-    def handle_inbound_request(self, request):
-        self.request_queue.put(request)
+    def handle_inbound_request(self, req):
+        self.request_queue.put(req)
         return NOT_DONE_YET
 
     @inlineCallbacks
@@ -79,7 +70,6 @@ class TestTelegramTransport(VumiTestCase):
             'id': 'Default channel',
             'type': 'channel',
         }
-
         inbound_msg = {
             'message_id': 'Message from Telegram channel',
             'chat': default_channel,
@@ -87,7 +77,6 @@ class TestTelegramTransport(VumiTestCase):
         }
 
         message = self.transport.translate_inbound_message(inbound_msg)
-
         self.assertEqual(inbound_msg['text'], message['content'])
         self.assertEqual(self.bot_username, message['to_addr'])
         self.assertEqual(default_channel['id'], message['from_addr'])
@@ -101,7 +90,6 @@ class TestTelegramTransport(VumiTestCase):
         }
 
         message = self.transport.translate_inbound_message(inbound_msg)
-
         self.assertEqual(inbound_msg['text'], message['content'])
         self.assertEqual(self.bot_username, message['to_addr'])
         self.assertEqual(self.default_user['id'], message['from_addr'])
@@ -114,14 +102,13 @@ class TestTelegramTransport(VumiTestCase):
         }
 
         message = self.transport.translate_inbound_message(inbound_msg)
-
         self.assertEqual('', message['content'])
         self.assertEqual(self.bot_username, message['to_addr'])
         self.assertEqual(self.default_user['id'], message['from_addr'])
 
     @inlineCallbacks
     def test_inbound_update(self):
-        telegram_update = json.dumps({
+        default_update = json.dumps({
             'update_id': 'update_id',
             'message': {
                 'message_id': 'msg_id',
@@ -135,12 +122,12 @@ class TestTelegramTransport(VumiTestCase):
             }
         })
         res = yield self.helper.mk_request(_method='POST',
-                                           _data=telegram_update)
+                                           _data=default_update)
         self.assertEqual(res.code, 200)
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
 
-        expected_update = json.loads(telegram_update)
+        expected_update = json.loads(default_update)
         self.assertEqual(msg['to_addr'], self.bot_username)
         self.assertEqual(msg['from_addr'], self.default_user['id'])
         self.assertEqual(msg['content'], expected_update['message']['text'])
@@ -154,8 +141,8 @@ class TestTelegramTransport(VumiTestCase):
         query_string = urllib.unquote_plus(query_string)
         params = query_string.split('&')
         for param in params:
-            pair = param.split('=')
-            output[pair[0]] = pair[1]
+            [key, value] = param.split('=')
+            output[key] = value
         return output
 
     def test_query_string_to_dict(self):
@@ -188,7 +175,6 @@ class TestTelegramTransport(VumiTestCase):
         yield d
 
         [ack] = yield self.helper.wait_for_dispatched_events(1)
-
         self.assertEqual(ack['event_type'], 'ack')
         self.assertEqual(ack['user_message_id'], msg['message_id'])
         self.assertEqual(ack['sent_message_id'], msg['message_id'])
@@ -206,11 +192,9 @@ class TestTelegramTransport(VumiTestCase):
             json.dumps({'ok': False, 'description': 'Invalid request'})
         )
         req.finish()
-
         yield d
 
         [nack] = yield self.helper.wait_for_dispatched_events(1)
-
         self.assertEqual(nack['event_type'], 'nack')
         self.assertEqual(nack['user_message_id'], msg['message_id'])
         self.assertEqual(nack['nack_reason'],
