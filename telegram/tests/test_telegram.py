@@ -4,7 +4,7 @@ import urllib
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredQueue
 from twisted.web.server import NOT_DONE_YET
 
-from vumi.tests.helpers import VumiTestCase, MessageHelper
+from vumi.tests.helpers import VumiTestCase
 from vumi.tests.fake_connection import FakeHttpServer
 from vumi.transports.httprpc.tests.helpers import HttpRpcTransportHelper
 

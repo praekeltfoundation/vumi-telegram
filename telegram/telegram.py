@@ -43,9 +43,6 @@ class TelegramTransport(HttpRpcTransport):
 
     CONFIG_CLASS = TelegramTransportConfig
 
-    # TODO: ensure we are not receiving duplicate updates
-    updates_received = []
-
     @classmethod
     def agent_factory(cls):
         """For swapping out the Agent for use in tests"""
@@ -57,7 +54,6 @@ class TelegramTransport(HttpRpcTransport):
         http_client = HTTPClient(self.agent_factory())
         try:
             r = yield http_client.post(query, params={'url': self.inbound_url})
-            res = yield json.loads(r.content())
             # TODO: log success / failure, and handle non-JSON responses
         except ResponseFailed:
             pass
@@ -91,7 +87,7 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
         update = json.loads(request.content.read())
-        update_id = update['update_id']
+        # TODO: ensure we are not receiving duplicate updates
 
         # Telegram updates can contain objects other than messages (ignore if
         # that is the case)
