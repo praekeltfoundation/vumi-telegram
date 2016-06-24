@@ -98,7 +98,7 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_inbound_update(self):
-        default_update = json.dumps({
+        update = {
             'update_id': 'update_id',
             'message': {
                 'message_id': 'msg_id',
@@ -110,17 +110,15 @@ class TestTelegramTransport(VumiTestCase):
                 'date': 1234,
                 'text': 'Incoming message from Telegram!',
             }
-        })
+        }
         res = yield self.helper.mk_request(_method='POST',
-                                           _data=default_update)
+                                           _data=json.dumps(update))
         self.assertEqual(res.code, http.OK)
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
-
-        expected_update = json.loads(default_update)
         self.assertEqual(msg['to_addr'], self.bot_username)
         self.assertEqual(msg['from_addr'], self.default_user['id'])
-        self.assertEqual(msg['content'], expected_update['message']['text'])
+        self.assertEqual(msg['content'], update['message']['text'])
         self.assertEqual(msg['transport_type'],
                          self.transport.transport_type)
         self.assertEqual(msg['transport_name'],
