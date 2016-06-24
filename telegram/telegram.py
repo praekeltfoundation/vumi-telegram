@@ -30,21 +30,6 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
     )
 
 
-class TelegramResource(HttpRpcResource):
-    isLeaf = True
-
-    def __init__(self, transport):
-        self.transport = transport
-        Resource.__init__(self)
-
-    def render(self, request, request_id=None):
-        if request_id is None:
-            pass
-            # TODO: generate a request id somehow
-        self.transport.handle_raw_inbound_message(request_id, request)
-        return ''
-
-
 class TelegramTransport(HttpRpcTransport):
     """
     Telegram transport for Vumi
@@ -92,15 +77,19 @@ class TelegramTransport(HttpRpcTransport):
         self.bot_username = config.bot_username
         self.web_path = config.web_path
         self.web_port = config.web_port
-        self.rpc_resource = TelegramResource(self)
+        self.rpc_resource = HttpRpcResource(self)
 
         self.web_resource = yield self.start_web_resources(
             [
                 (self.rpc_resource, self.web_path),
             ],
             self.web_port)
+        self.clock = self.get_clock()
 
         yield self.setup_webhook()
+
+    def get_clock(self):
+        return reactor
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
@@ -119,8 +108,7 @@ class TelegramTransport(HttpRpcTransport):
             'TelegramTransport receiving inbound message from %s to %s' % (
                 message['from_addr'], message['to_addr']))
 
-        # This throws off the tests for some reason
-        # request.finish()
+        request.finish()
 
         yield self.publish_message(
             message_id=message_id,
