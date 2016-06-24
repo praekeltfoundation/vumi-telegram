@@ -158,6 +158,12 @@ class TestTelegramTransport(VumiTestCase):
             output[pair[0]] = pair[1]
         return output
 
+    def test_query_string_to_dict(self):
+        query_string = 'param=one&nextparam=one+two'
+        expected_dict = {'param': 'one', 'nextparam': 'one two'}
+        self.assertEqual(expected_dict,
+                         self.query_string_to_dict(query_string))
+
     @inlineCallbacks
     def test_valid_outbound_message(self):
         msg = self.helper.make_outbound(
