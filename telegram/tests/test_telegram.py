@@ -118,7 +118,7 @@ class TestTelegramTransport(VumiTestCase):
             req.finish()
             yield d
             [log] = lc.messages()
-            self.assertEqual(log, 'Webhook setup failed: unexpected response')
+            self.assertEqual(log, 'Webhook setup failed: Unexpected response')
 
     def test_translate_inbound_message_from_channel(self):
         default_channel = {
