@@ -9,7 +9,6 @@ cache:
   - pip
   - directories:
     - $HOME/pyenv-cache
-
 before_install:
   # If necessary, set up an appropriate version of pypy. Also, double check that
   # Python version is correct (fgrep returns 1 if not and Travis halts).
