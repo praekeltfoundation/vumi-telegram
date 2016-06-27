@@ -4,6 +4,7 @@ from treq.client import HTTPClient
 
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
+from twisted.web import http
 from twisted.web.client import Agent
 from twisted.web._newclient import ResponseFailed
 
@@ -50,21 +51,31 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def setup_webhook(self):
-        query = '%s/setWebhook' % self.outbound_url.rstrip('/')
+        # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
+        #       webhook setup
+        url = '%s/setWebhook' % self.outbound_url.rstrip('/')
         http_client = HTTPClient(self.agent_factory())
+
         try:
-            r = yield http_client.post(query, json.dumps({
-                'url': self.inbound_url
-            }), headers={
-                'Content-Type': ['application/json']
-            })
-            # TODO: log success / failure, and handle non-JSON responses
+            r = yield http_client.post(
+                url=url,
+                data=json.dumps({'url': self.inbound_url}),
+                headers={'Content-Type': ['application/json']}
+                )
+            content = yield r.content()
+            res = json.loads(content)
+            if r.code == http.OK and res['ok']:
+                log.info('Webhook set up on %s' % self.inbound_url)
+            else:
+                log.info('Webhook setup failed: %s' % res['description'])
+
+        # Treat page redirects as errors, since Telegram seems to redirect us
+        # when our bot token is invalid
         except ResponseFailed:
-            pass
-            # It seems that if our request contains invalid params, Telegram
-            # redirects to the Bot API page instead of sending a proper
-            # response, which throws HTTPClient for a loop.
-            # TODO: handle page redirect, as well as other possible exceptions
+            log.info('Webhook setup failed: invalid token')
+        # In case we get a response from Telegram that isn't JSON
+        except ValueError:
+            log.info('Webhook setup failed: unexpected response')
 
     @inlineCallbacks
     def setup_transport(self):
@@ -158,7 +169,6 @@ class TelegramTransport(HttpRpcTransport):
             r = yield http_client.post(url, json.dumps(params), headers={
                 'Content-Type': ['application/json']
             })
-            # TODO: handle possible non-JSON responses
             content = yield r.content()
             res = json.loads(content)
         except ResponseFailed:

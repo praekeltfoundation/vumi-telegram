@@ -23,13 +23,20 @@ class TestTelegramTransport(VumiTestCase):
         self.pending_requests = []
         self.addCleanup(self.finish_requests)
         self.mock_server = FakeHttpServer(self.handle_inbound_request)
-        self.transport = yield self.get_transport()
 
         self.default_user = {
             'id': 'default_user_id',
             'username': '@default_user',
         }
-        self.bot_username = self.transport.get_static_config().bot_username
+        self.bad_telegram_response = {
+            'ok': False,
+            'description': 'Bad request',
+        }
+        self.bot_username = '@bot'
+        self.API_URL = 'https://api.telegram.org/bot'
+        self.TOKEN = '1234'
+
+        self.transport = yield self.get_transport()
 
         # Telegram chat types
         self.PRIVATE = 'private'
@@ -38,10 +45,8 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def get_transport(self, **config):
-        self.API_URL = 'https://api.telegram.org/bot'
-        self.TOKEN = '1234'
         defaults = {
-            'bot_username': '@bot',
+            'bot_username': self.bot_username,
             'bot_token': self.TOKEN,
             'web_path': 'foo',
             'web_port': 0,
@@ -71,7 +76,7 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_setup_webhook_no_errors(self):
-        self.transport.setup_webhook()
+        d = self.transport.setup_webhook()
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'setWebhook')
 
@@ -82,9 +87,38 @@ class TestTelegramTransport(VumiTestCase):
         content = json.loads(req.content.read())
         self.assertEqual(content['url'], 'www.example.com')
 
-        # TODO: respond to request and handle in transport
-        req.finish()
-        # TODO: test with LogCatcher
+        req.write(json.dumps({'ok': True}))
+        with LogCatcher(message='Webhook') as lc:
+            req.finish()
+            yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Webhook set up on www.example.com')
+
+    @inlineCallbacks
+    def test_setup_webhook_with_errors(self):
+        d = self.transport.setup_webhook()
+        req = yield self.get_next_request()
+
+        req.setResponseCode(http.BAD_REQUEST)
+        req.write(json.dumps(self.bad_telegram_response))
+        with LogCatcher(message='Webhook') as lc:
+            req.finish()
+            yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Webhook setup failed: Bad request')
+
+    @inlineCallbacks
+    def test_setup_webhook_with_unexpected_response(self):
+        d = self.transport.setup_webhook()
+        req = yield self.get_next_request()
+
+        req.setResponseCode(http.BAD_REQUEST)
+        req.write("Wait, this isn't JSON...")
+        with LogCatcher(message='Webhook') as lc:
+            req.finish()
+            yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Webhook setup failed: unexpected response')
 
     def test_translate_inbound_message_from_channel(self):
         default_channel = {
@@ -208,9 +242,8 @@ class TestTelegramTransport(VumiTestCase):
         d = self.helper.dispatch_outbound(msg)
 
         req = yield self.get_next_request()
-        req.write(
-            json.dumps({'ok': False, 'description': 'Invalid request'})
-        )
+        req.setResponseCode(http.BAD_REQUEST)
+        req.write(json.dumps(self.bad_telegram_response))
         req.finish()
         yield d
 
@@ -218,4 +251,4 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(nack['event_type'], 'nack')
         self.assertEqual(nack['user_message_id'], msg['message_id'])
         self.assertEqual(nack['nack_reason'],
-                         'Failed to send message: Invalid request')
+                         'Failed to send message: Bad request')
