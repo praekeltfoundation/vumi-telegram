@@ -1,5 +1,4 @@
 import json
-import urllib
 
 from twisted.internet.defer import inlineCallbacks, returnValue, DeferredQueue
 from twisted.web.server import NOT_DONE_YET
@@ -39,12 +38,15 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def get_transport(self, **config):
+        self.API_URL = 'https://api.telegram.org/bot'
+        self.TOKEN = '1234'
         defaults = {
             'bot_username': '@bot',
-            'bot_token': '',
+            'bot_token': self.TOKEN,
             'web_path': 'foo',
             'web_port': 0,
-            'inbound_url': 'www.example.com'
+            'inbound_url': 'www.example.com',
+            'outbound_url': self.API_URL
         }
         defaults.update(config)
         transport = yield self.helper.get_transport(defaults)
@@ -66,6 +68,23 @@ class TestTelegramTransport(VumiTestCase):
         for req in self.pending_requests:
             if not req.finished:
                 yield req.finish()
+
+    @inlineCallbacks
+    def test_setup_webhook_no_errors(self):
+        self.transport.setup_webhook()
+        expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
+                                    'setWebhook')
+
+        req = yield self.get_next_request()
+        self.assertEqual(req.method, 'POST')
+        self.assertEqual(req.path, expected_url)
+
+        content = json.loads(req.content.read())
+        self.assertEqual(content['url'], 'www.example.com')
+
+        # TODO: respond to request and handle in transport
+        req.finish()
+        # TODO: test with LogCatcher
 
     def test_translate_inbound_message_from_channel(self):
         default_channel = {

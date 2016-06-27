@@ -50,10 +50,14 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def setup_webhook(self):
-        query = self.outbound_url + '/setWebhook'
+        query = '%s/setWebhook' % self.outbound_url.rstrip('/')
         http_client = HTTPClient(self.agent_factory())
         try:
-            r = yield http_client.post(query, params={'url': self.inbound_url})
+            r = yield http_client.post(query, json.dumps({
+                'url': self.inbound_url
+            }), headers={
+                'Content-Type': ['application/json']
+            })
             # TODO: log success / failure, and handle non-JSON responses
         except ResponseFailed:
             pass
@@ -65,7 +69,8 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def setup_transport(self):
         config = self.get_static_config()
-        self.outbound_url = config.outbound_url + config.bot_token
+        self.outbound_url = '%s%s' % (config.outbound_url.rstrip('/'),
+                                      config.bot_token)
         self.inbound_url = config.inbound_url
         self.bot_username = config.bot_username
         self.web_path = config.web_path
