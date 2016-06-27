@@ -21,4 +21,4 @@ script:
   - trial telegram
   - flake8 telegram
 after_success:
-  - if [[ -z "$NO_COVERAGE" ]]; then coveralls; fi
+  - coveralls
