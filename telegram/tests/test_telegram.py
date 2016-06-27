@@ -209,7 +209,9 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(res.code, http.OK)
 
     @inlineCallbacks
-    def test_valid_outbound_message(self):
+    def test_outbound_message_no_errors(self):
+        expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
+                                    'sendMessage')
         msg = self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id'],
@@ -219,6 +221,7 @@ class TestTelegramTransport(VumiTestCase):
 
         req = yield self.get_next_request()
         self.assertEqual(req.method, 'POST')
+        self.assertEqual(req.path, expected_url)
 
         outbound_msg = json.loads(req.content.read())
         self.assertEqual(outbound_msg['text'], 'Outbound message!')
@@ -234,7 +237,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(ack['sent_message_id'], msg['message_id'])
 
     @inlineCallbacks
-    def test_invalid_outbound_message(self):
+    def test_outbound_message_with_errors(self):
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id']
@@ -252,3 +255,23 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(nack['user_message_id'], msg['message_id'])
         self.assertEqual(nack['nack_reason'],
                          'Failed to send message: Bad request')
+
+    @inlineCallbacks
+    def test_outbound_message_with_unexpected_response(self):
+        msg = yield self.helper.make_outbound(
+            content='Outbound message!',
+            to_addr=self.default_user['id']
+            )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        req.setResponseCode(http.BAD_REQUEST)
+        req.write("Wait, this isn't JSON...")
+        req.finish()
+        yield d
+
+        [nack] = yield self.helper.wait_for_dispatched_events(1)
+        self.assertEqual(nack['event_type'], 'nack')
+        self.assertEqual(nack['user_message_id'], msg['message_id'])
+        self.assertEqual(nack['nack_reason'],
+                         'Failed to send message: Unexpected response')

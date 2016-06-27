@@ -156,34 +156,43 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_outbound_message(self, message):
-        message_id = message['message_id']
-
         # TODO: handle direct replies
-        params = {
+        message_id = message['message_id']
+        outbound_msg = {
             'chat_id': message['to_addr'],
             'text': message['content'],
         }
         url = '%s/sendMessage' % self.outbound_url.rstrip('/')
         http_client = HTTPClient(self.agent_factory())
+
         try:
-            r = yield http_client.post(url, json.dumps(params), headers={
-                'Content-Type': ['application/json']
-            })
+            r = yield http_client.post(
+                url=url,
+                data=json.dumps(outbound_msg),
+                headers={'Content-Type': ['application/json']},
+            )
             content = yield r.content()
             res = json.loads(content)
-        except ResponseFailed:
-            # TODO: Handle page redirect in event of our request being denied
-            # This is a temporary fix for now
-            res = {'ok': False, 'description': 'Page redirect', }
+            if r.code == http.OK and res['ok']:
+                yield self.publish_ack(
+                    user_message_id=message_id,
+                    sent_message_id=message_id,
+                )
+            else:
+                yield self.outbound_failure(message_id, res['description'])
 
-        if res['ok']:
-            yield self.publish_ack(
-                user_message_id=message_id,
-                sent_message_id=message_id,
-            )
-        else:
-            yield self.publish_nack(message_id, 'Failed to send message: %s' %
-                                    res['description'])
+        # Treat page redirects as errors, since Telegram seems to redirect us
+        # when our bot token is invalid
+        except ResponseFailed:
+            yield self.outbound_failure(message_id, 'Invalid token')
+        # In case we get a response from Telegram that isn't JSON
+        except ValueError:
+            yield self.outbound_failure(message_id, 'Unexpected response')
+
+    @inlineCallbacks
+    def outbound_failure(self, message_id, reason):
+        yield self.publish_nack(message_id, 'Failed to send message: %s' %
+                                reason)
 
     @inlineCallbacks
     def teardown_transport(self):
