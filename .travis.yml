@@ -1,12 +1,21 @@
 sudo: false
 language: python
-python:
-  - "2.7"
 matrix:
   include:
+    - python: "2.7"
     # Test on pypy without coverage, because it's unnecessary and very slow.
     - python: "pypy"
-      env: NO_COVERAGE=1
+    env: PYPY_VERSION="5.3" NO_COVERAGE=1 PYTHON_BUILD_CACHE_PATH="$HOME/pyenv-cache"
+cache:
+  - pip
+  - directories:
+    - $HOME/pyenv-cache
+before_install:
+  - |
+      if [[ -n "$PYPY_VERSION" ]]; then
+        source .travis/setup-pypy.sh
+        python --version 2>&1 | fgrep "PyPy $PYPY_VERSION"
+      fi
 install:
   - "pip install -r requirements.txt"
   - "pip install coveralls"
