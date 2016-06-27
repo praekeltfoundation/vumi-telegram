@@ -164,9 +164,17 @@ class TestTelegramTransport(VumiTestCase):
                 'text': 'Incoming message from Telegram!',
             }
         }
-        res = yield self.helper.mk_request(_method='POST',
-                                           _data=json.dumps(update))
-        self.assertEqual(res.code, http.OK)
+
+        with LogCatcher(message='TelegramTransport') as lc:
+            res = yield self.helper.mk_request(_method='POST',
+                                               _data=json.dumps(update))
+            self.assertEqual(res.code, http.OK)
+            [log] = lc.messages()
+            self.assertEqual(
+                log,
+                'TelegramTransport receiving inbound message from %s to %s' %
+                (self.default_user['id'], self.bot_username)
+            )
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
         self.assertEqual(msg['to_addr'], self.bot_username)
