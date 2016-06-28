@@ -70,11 +70,17 @@ class TelegramTransport(HttpRpcTransport):
 
         # Treat page redirects as errors, since Telegram seems to redirect us
         # when our bot token is invalid
-        except ResponseFailed:
-            log.info('Webhook setup failed: Invalid token')
+        except ResponseFailed as e:
+            log.info(
+                'Webhook setup failed: Invalid token (request redirected)\n%s'
+                % e
+            )
         # In case we get a response from Telegram that isn't JSON
-        except ValueError:
-            log.info('Webhook setup failed: Unexpected response')
+        except ValueError as e:
+            log.info(
+                'Webhook setup failed: Unexpected response (expected JSON)\n%s'
+                % e
+            )
 
     @inlineCallbacks
     def setup_transport(self):
@@ -170,11 +176,17 @@ class TelegramTransport(HttpRpcTransport):
 
         # Treat page redirects as errors, since Telegram seems to redirect us
         # when our bot token is invalid
-        except ResponseFailed:
-            yield self.outbound_failure(message_id, 'Invalid token')
+        except ResponseFailed as e:
+            yield self.outbound_failure(
+                message_id,
+                'Invalid token (request redirected)\n%s' % e,
+                )
         # In case we get a response from Telegram that isn't JSON
-        except ValueError:
-            yield self.outbound_failure(message_id, 'Unexpected response')
+        except ValueError as e:
+            yield self.outbound_failure(
+                message_id,
+                'Unexpected response (expected JSON)\n%s' % e,
+                )
 
     @inlineCallbacks
     def outbound_failure(self, message_id, reason):
