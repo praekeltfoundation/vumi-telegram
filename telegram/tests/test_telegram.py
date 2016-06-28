@@ -108,6 +108,20 @@ class TestTelegramTransport(VumiTestCase):
             self.assertEqual(log, 'Webhook setup failed: Bad request')
 
     @inlineCallbacks
+    def test_setup_webhook_with_invalid_token(self):
+        d = self.transport.setup_webhook()
+        req = yield self.get_next_request()
+
+        req.setResponseCode(http.FOUND)
+        req.redirect('www.redirected.com')
+
+        with LogCatcher(message='Webhook') as lc:
+            req.finish()
+            yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Webhook setup failed: Invalid token')
+
+    @inlineCallbacks
     def test_setup_webhook_with_unexpected_response(self):
         d = self.transport.setup_webhook()
         req = yield self.get_next_request()
@@ -283,3 +297,23 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(nack['user_message_id'], msg['message_id'])
         self.assertEqual(nack['nack_reason'],
                          'Failed to send message: Unexpected response')
+
+    @inlineCallbacks
+    def test_outbound_message_with_invalid_token(self):
+        msg = yield self.helper.make_outbound(
+            content='Outbound message!',
+            to_addr=self.default_user['id'],
+            )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        req.setResponseCode(http.FOUND)
+        req.redirect('www.redirected.com')
+        req.finish()
+        yield d
+
+        [nack] = yield self.helper.wait_for_dispatched_events(1)
+        self.assertEqual(nack['event_type'], 'nack')
+        self.assertEqual(nack['user_message_id'], msg['message_id'])
+        self.assertEqual(nack['nack_reason'],
+                         'Failed to send message: Invalid token')
