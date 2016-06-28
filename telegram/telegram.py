@@ -8,7 +8,7 @@ from twisted.web import http
 from twisted.web.client import Agent
 from twisted.web._newclient import ResponseFailed
 
-from vumi.transports.httprpc.httprpc import HttpRpcTransport, HttpRpcResource
+from vumi.transports.httprpc.httprpc import HttpRpcTransport
 from vumi.config import ConfigText
 from vumi import log
 
@@ -40,7 +40,6 @@ class TelegramTransport(HttpRpcTransport):
     """
     transport_type = 'telegram'
     transport_name = 'telegram_transport'
-    _requests = {}
 
     CONFIG_CLASS = TelegramTransportConfig
 
@@ -79,26 +78,14 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def setup_transport(self):
+        yield super(TelegramTransport, self).setup_transport()
         config = self.get_static_config()
         self.outbound_url = '%s%s' % (config.outbound_url.rstrip('/'),
                                       config.bot_token)
         self.inbound_url = config.inbound_url
         self.bot_username = config.bot_username
-        self.web_path = config.web_path
-        self.web_port = config.web_port
-        self.clock = self.get_clock()
-        self.rpc_resource = HttpRpcResource(self)
-
-        self.web_resource = yield self.start_web_resources(
-            [
-                (self.rpc_resource, self.web_path),
-            ],
-            self.web_port)
 
         yield self.setup_webhook()
-
-    def get_clock(self):
-        return reactor
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
@@ -193,7 +180,3 @@ class TelegramTransport(HttpRpcTransport):
     def outbound_failure(self, message_id, reason):
         yield self.publish_nack(message_id, 'Failed to send message: %s' %
                                 reason)
-
-    @inlineCallbacks
-    def teardown_transport(self):
-        yield self.web_resource.loseConnection()
