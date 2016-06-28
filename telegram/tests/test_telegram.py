@@ -84,7 +84,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(req.method, 'POST')
         self.assertEqual(req.path, expected_url)
 
-        content = json.loads(req.content.read())
+        content = json.load(req.content)
         self.assertEqual(content['url'], 'www.example.com')
 
         req.write(json.dumps({'ok': True}))
@@ -231,7 +231,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(req.method, 'POST')
         self.assertEqual(req.path, expected_url)
 
-        outbound_msg = json.loads(req.content.read())
+        outbound_msg = json.load(req.content)
         self.assertEqual(outbound_msg['text'], 'Outbound message!')
         self.assertEqual(outbound_msg['chat_id'], self.default_user['id'])
 

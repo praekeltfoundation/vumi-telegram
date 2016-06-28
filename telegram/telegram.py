@@ -102,7 +102,7 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
-        update = json.loads(request.content.read())
+        update = json.load(request.content)
         # TODO: ensure we are not receiving duplicate updates
 
         # Telegram updates can contain objects other than messages (ignore if
