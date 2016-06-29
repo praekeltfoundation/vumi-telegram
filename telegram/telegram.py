@@ -64,20 +64,20 @@ class TelegramTransport(HttpRpcTransport):
             content = yield r.content()
             res = json.loads(content)
             if r.code == http.OK and res['ok']:
-                log.info('Webhook set up on %s' % self.inbound_url)
+                self.log.info('Webhook set up on %s' % self.inbound_url)
             else:
-                log.info('Webhook setup failed: %s' % res['description'])
+                self.log.info('Webhook setup failed: %s' % res['description'])
 
         # Treat page redirects as errors, since Telegram seems to redirect us
         # when our bot token is invalid
         except ResponseFailed as e:
-            log.info(
+            self.log.info(
                 'Webhook setup failed: Invalid token (request redirected)\n%s'
                 % e
             )
         # In case we get a response from Telegram that isn't JSON
         except ValueError as e:
-            log.info(
+            self.log.info(
                 'Webhook setup failed: Unexpected response (expected JSON)\n%s'
                 % e
             )
@@ -104,7 +104,7 @@ class TelegramTransport(HttpRpcTransport):
         # Telegram updates can contain objects other than messages (ignore if
         # that is the case)
         if 'message' not in update:
-            log.info('Inbound update does not contain a message')
+            self.log.info('Inbound update does not contain a message')
             request.finish()
             return
         else:
@@ -112,7 +112,7 @@ class TelegramTransport(HttpRpcTransport):
 
         if 'text' in message:
             message = self.translate_inbound_message(update['message'])
-            log.info(
+            self.log.info(
                 'TelegramTransport receiving inbound message from %s to %s' % (
                     message['from_addr'], message['to_addr']))
 
@@ -125,7 +125,7 @@ class TelegramTransport(HttpRpcTransport):
                 transport_name=self.transport_name,
             )
         else:
-            log.info('Message is not a text message')
+            self.log.info('Message is not a text message')
 
         request.finish()
 
