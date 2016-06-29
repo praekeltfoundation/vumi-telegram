@@ -10,7 +10,6 @@ from twisted.web._newclient import ResponseFailed
 
 from vumi.transports.httprpc.httprpc import HttpRpcTransport
 from vumi.config import ConfigText, ConfigUrl
-from vumi import log
 
 
 class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
@@ -98,35 +97,35 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
-        update = json.load(request.content)
         # TODO: ensure we are not receiving duplicate updates
+        update = json.load(request.content)
 
-        # Telegram updates can contain objects other than messages (ignore if
-        # that is the case)
+        # Ignore updates that do not contain message objects
         if 'message' not in update:
             self.log.info('Inbound update does not contain a message')
             request.finish()
             return
-        else:
-            message = update['message']
 
-        if 'text' in message:
-            message = self.translate_inbound_message(update['message'])
-            self.log.info(
-                'TelegramTransport receiving inbound message from %s to %s' % (
-                    message['from_addr'], message['to_addr']))
-
-            yield self.publish_message(
-                message_id=message_id,
-                content=message['content'],
-                to_addr=message['to_addr'],
-                from_addr=message['from_addr'],
-                transport_type=self.transport_type,
-                transport_name=self.transport_name,
-            )
-        else:
+        # Ignore messages that aren't text messages
+        message = update['message']
+        if 'text' not in message:
             self.log.info('Message is not a text message')
+            request.finish()
+            return
 
+        message = self.translate_inbound_message(update['message'])
+        self.log.info(
+            'TelegramTransport receiving inbound message from %s to %s' % (
+                message['from_addr'], message['to_addr']))
+
+        yield self.publish_message(
+            message_id=message_id,
+            content=message['content'],
+            to_addr=message['to_addr'],
+            from_addr=message['from_addr'],
+            transport_type=self.transport_type,
+            transport_name=self.transport_name,
+        )
         request.finish()
 
     def translate_inbound_message(self, message):
