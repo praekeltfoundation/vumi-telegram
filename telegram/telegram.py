@@ -60,26 +60,23 @@ class TelegramTransport(HttpRpcTransport):
                 data=json.dumps({'url': self.inbound_url}),
                 headers={'Content-Type': ['application/json']}
                 )
-            content = yield r.content()
-            res = json.loads(content)
-            if r.code == http.OK and res['ok']:
-                self.log.info('Webhook set up on %s' % self.inbound_url)
-            else:
-                self.log.info('Webhook setup failed: %s' % res['description'])
-
-        # Treat page redirects as errors, since Telegram seems to redirect us
-        # when our bot token is invalid
+        # Telegram redirects our request if our bot token is invalid
         except ResponseFailed as e:
             self.log.info(
-                'Webhook setup failed: Invalid token (request redirected)\n%s'
-                % e
-            )
-        # In case we get a response from Telegram that isn't JSON
+                'Webhook setup failed: Invalid token (redirected)\n%s' % e)
+            return
+
+        try:
+            res = yield r.json()
         except ValueError as e:
             self.log.info(
-                'Webhook setup failed: Unexpected response (expected JSON)\n%s'
-                % e
-            )
+                'Webhook setup failed: Expected JSON response\n%s' % e)
+            return
+
+        if r.code == http.OK and res['ok']:
+            self.log.info('Webhook set up on %s' % self.inbound_url)
+        else:
+            self.log.info('Webhook setup failed: %s' % res['description'])
 
     @inlineCallbacks
     def setup_transport(self):
@@ -166,29 +163,23 @@ class TelegramTransport(HttpRpcTransport):
                 data=json.dumps(outbound_msg),
                 headers={'Content-Type': ['application/json']},
             )
-            content = yield r.content()
-            res = json.loads(content)
-            if r.code == http.OK and res['ok']:
-                yield self.publish_ack(
-                    user_message_id=message_id,
-                    sent_message_id=message_id,
-                )
-            else:
-                yield self.outbound_failure(message_id, res['description'])
-
-        # Treat page redirects as errors, since Telegram seems to redirect us
-        # when our bot token is invalid
+        # Telegram redirects our request if our bot token is invalid
         except ResponseFailed as e:
-            yield self.outbound_failure(
-                message_id,
-                'Invalid token (request redirected)\n%s' % e,
-                )
-        # In case we get a response from Telegram that isn't JSON
+            yield self.outbound_failure(message_id,
+                                        'Invalid token (redirected)\n%s' % e)
+            return
+        try:
+            res = yield r.json()
         except ValueError as e:
-            yield self.outbound_failure(
-                message_id,
-                'Unexpected response (expected JSON)\n%s' % e,
-                )
+            yield self.outbound_failure(message_id,
+                                        'Expected JSON response\n%s' % e)
+            return
+
+        if r.code == http.OK and res['ok']:
+            yield self.publish_ack(user_message_id=message_id,
+                                   sent_message_id=message_id)
+        else:
+            yield self.outbound_failure(message_id, res['description'])
 
     @inlineCallbacks
     def outbound_failure(self, message_id, reason):

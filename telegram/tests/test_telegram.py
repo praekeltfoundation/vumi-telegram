@@ -127,7 +127,7 @@ class TestTelegramTransport(VumiTestCase):
             log = logs.splitlines()[0]
             self.assertEqual(
                 log,
-                'Webhook setup failed: Invalid token (request redirected)'
+                'Webhook setup failed: Invalid token (redirected)'
                 )
 
     @inlineCallbacks
@@ -144,7 +144,7 @@ class TestTelegramTransport(VumiTestCase):
             log = logs.splitlines()[0]
             self.assertEqual(
                 log,
-                'Webhook setup failed: Unexpected response (expected JSON)'
+                'Webhook setup failed: Expected JSON response'
                 )
 
     def test_translate_inbound_message_from_channel(self):
@@ -310,7 +310,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(nack['user_message_id'], msg['message_id'])
         self.assertEqual(
             nack['nack_reason'].splitlines()[0],
-            'Failed to send message: Unexpected response (expected JSON)'
+            'Failed to send message: Expected JSON response'
             )
 
     @inlineCallbacks
@@ -332,5 +332,5 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(nack['user_message_id'], msg['message_id'])
         self.assertEqual(
             nack['nack_reason'].splitlines()[0],
-            'Failed to send message: Invalid token (request redirected)'
+            'Failed to send message: Invalid token (redirected)'
             )
