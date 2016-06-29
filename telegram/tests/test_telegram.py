@@ -334,3 +334,11 @@ class TestTelegramTransport(VumiTestCase):
             nack['nack_reason'].splitlines()[0],
             'Failed to send message: Invalid token (redirected)'
             )
+
+    @inlineCallbacks
+    def test_outbound_failure(self):
+        yield self.transport.outbound_failure(message_id='id', reason='error')
+        [nack] = yield self.helper.wait_for_dispatched_events(1)
+        self.assertEqual(nack['event_type'], 'nack')
+        self.assertEqual(nack['user_message_id'], 'id')
+        self.assertEqual(nack['nack_reason'], 'Failed to send message: error')
