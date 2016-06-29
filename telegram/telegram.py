@@ -6,7 +6,7 @@ from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from twisted.web import http
 from twisted.web.client import Agent
-from twisted.web._newclient import ResponseFailed
+from twisted.web.client import ResponseFailed
 
 from vumi.transports.httprpc.httprpc import HttpRpcTransport
 from vumi.config import ConfigText, ConfigUrl
