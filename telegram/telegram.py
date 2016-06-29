@@ -62,21 +62,21 @@ class TelegramTransport(HttpRpcTransport):
                 )
         # Telegram redirects our request if our bot token is invalid
         except ResponseFailed as e:
-            self.log.info(
+            self.log.warning(
                 'Webhook setup failed: Invalid token (redirected)\n%s' % e)
             return
 
         try:
             res = yield r.json()
         except ValueError as e:
-            self.log.info(
+            self.log.warning(
                 'Webhook setup failed: Expected JSON response\n%s' % e)
             return
 
         if r.code == http.OK and res['ok']:
             self.log.info('Webhook set up on %s' % self.inbound_url)
         else:
-            self.log.info('Webhook setup failed: %s' % res['description'])
+            self.log.warning('Webhook setup failed: %s' % res['description'])
 
     @inlineCallbacks
     def setup_transport(self):
