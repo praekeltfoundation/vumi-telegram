@@ -14,6 +14,26 @@ from telegram.telegram import TelegramTransport
 
 class TestTelegramTransport(VumiTestCase):
 
+    # Default configurations for our bot
+    bot_username = '@bot'
+    API_URL = 'https://api.telegram.org/bot'
+    TOKEN = '1234'
+
+    # Telegram chat types
+    PRIVATE = 'private'
+    CHANNEL = 'channel'
+    GROUP = 'group'
+
+    # Some default Telegram objects
+    default_user = {
+        'id': 'default_user_id',
+        'username': '@default_user',
+    }
+    bad_telegram_response = {
+        'ok': False,
+        'description': 'Bad request',
+    }
+
     @inlineCallbacks
     def setUp(self):
         self.helper = self.add_helper(
@@ -24,24 +44,7 @@ class TestTelegramTransport(VumiTestCase):
         self.addCleanup(self.finish_requests)
         self.mock_server = FakeHttpServer(self.handle_inbound_request)
 
-        self.default_user = {
-            'id': 'default_user_id',
-            'username': '@default_user',
-        }
-        self.bad_telegram_response = {
-            'ok': False,
-            'description': 'Bad request',
-        }
-        self.bot_username = '@bot'
-        self.API_URL = 'https://api.telegram.org/bot'
-        self.TOKEN = '1234'
-
         self.transport = yield self.get_transport()
-
-        # Telegram chat types
-        self.PRIVATE = 'private'
-        self.CHANNEL = 'channel'
-        self.GROUP = 'group'
 
     @inlineCallbacks
     def get_transport(self, **config):
