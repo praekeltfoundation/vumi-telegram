@@ -74,6 +74,11 @@ class TestTelegramTransport(VumiTestCase):
             if not req.finished:
                 yield req.finish()
 
+    def test_get_outbound_url(self):
+        test_url = self.transport.get_outbound_url('myPath')
+        self.assertEqual(test_url, '%s%s/%s' %
+                         (self.API_URL, self.TOKEN, 'myPath'))
+
     @inlineCallbacks
     def test_setup_webhook_no_errors(self):
         d = self.transport.setup_webhook()

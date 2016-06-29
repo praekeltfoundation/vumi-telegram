@@ -9,7 +9,7 @@ from twisted.web.client import Agent
 from twisted.web._newclient import ResponseFailed
 
 from vumi.transports.httprpc.httprpc import HttpRpcTransport
-from vumi.config import ConfigText
+from vumi.config import ConfigText, ConfigUrl
 from vumi import log
 
 
@@ -24,11 +24,11 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         static=True,
         required=True,
     )
-    outbound_url = ConfigText(
+    outbound_url = ConfigUrl(
         'The URL our bot should make requests to',
         default='https://api.telegram.org/bot', static=True,
     )
-    inbound_url = ConfigText(
+    inbound_url = ConfigUrl(
         'The URL our transport will listen on for Telegram updates',
         static=True, required=True,
     )
@@ -52,7 +52,7 @@ class TelegramTransport(HttpRpcTransport):
     def setup_webhook(self):
         # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
         #       webhook setup
-        url = '%s/setWebhook' % self.outbound_url.rstrip('/')
+        url = self.get_outbound_url('setWebhook')
         http_client = HTTPClient(self.agent_factory())
 
         try:
@@ -86,12 +86,15 @@ class TelegramTransport(HttpRpcTransport):
     def setup_transport(self):
         yield super(TelegramTransport, self).setup_transport()
         config = self.get_static_config()
-        self.outbound_url = '%s%s' % (config.outbound_url.rstrip('/'),
-                                      config.bot_token)
-        self.inbound_url = config.inbound_url
+        self.api_url = '%s%s' % (config.outbound_url.geturl().rstrip('/'),
+                                 config.bot_token)
+        self.inbound_url = config.inbound_url.geturl()
         self.bot_username = config.bot_username
 
         yield self.setup_webhook()
+
+    def get_outbound_url(self, path):
+        return '%s/%s' % (self.api_url, path)
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
@@ -155,7 +158,7 @@ class TelegramTransport(HttpRpcTransport):
             'chat_id': message['to_addr'],
             'text': message['content'],
         }
-        url = '%s/sendMessage' % self.outbound_url.rstrip('/')
+        url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
 
         try:
