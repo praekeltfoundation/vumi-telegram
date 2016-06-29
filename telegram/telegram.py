@@ -131,9 +131,9 @@ class TelegramTransport(HttpRpcTransport):
         """
         content = message['text']
         to_addr = self.bot_username
-        # Sender field is empty if message is sent over a Telegram channel as
-        # opposed to being directly sent to our bot (in which case the channel
-        # id is what we want)
+
+        # Messages sent over channels do not contain a 'from' field - in that
+        # case, we want the channel's chat id
         if 'from' in message:
             from_addr = message['from']['id']
         else:
