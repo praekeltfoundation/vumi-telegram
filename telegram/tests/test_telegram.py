@@ -119,16 +119,12 @@ class TestTelegramTransport(VumiTestCase):
 
         req.setResponseCode(http.FOUND)
         req.redirect('www.redirected.com')
-
         with LogCatcher(message='Webhook') as lc:
             req.finish()
             yield d
-            [logs] = lc.messages()
-            log = logs.splitlines()[0]
-            self.assertEqual(
-                log,
-                'Webhook setup failed: Invalid token (redirected)'
-                )
+            [log] = lc.messages()
+            self.assertSubstring(
+                'Webhook setup failed: Invalid token (redirected)', log)
 
     @inlineCallbacks
     def test_setup_webhook_with_unexpected_response(self):
@@ -140,12 +136,9 @@ class TestTelegramTransport(VumiTestCase):
         with LogCatcher(message='Webhook') as lc:
             req.finish()
             yield d
-            [logs] = lc.messages()
-            log = logs.splitlines()[0]
-            self.assertEqual(
-                log,
-                'Webhook setup failed: Expected JSON response'
-                )
+            [log] = lc.messages()
+            self.assertSubstring(
+                'Webhook setup failed: Expected JSON response', log)
 
     def test_translate_inbound_message_from_channel(self):
         default_channel = {
@@ -308,10 +301,8 @@ class TestTelegramTransport(VumiTestCase):
         [nack] = yield self.helper.wait_for_dispatched_events(1)
         self.assertEqual(nack['event_type'], 'nack')
         self.assertEqual(nack['user_message_id'], msg['message_id'])
-        self.assertEqual(
-            nack['nack_reason'].splitlines()[0],
-            'Failed to send message: Expected JSON response'
-            )
+        self.assertSubstring('Failed to send message: Expected JSON response',
+                             nack['nack_reason'])
 
     @inlineCallbacks
     def test_outbound_message_with_invalid_token(self):
@@ -330,9 +321,9 @@ class TestTelegramTransport(VumiTestCase):
         [nack] = yield self.helper.wait_for_dispatched_events(1)
         self.assertEqual(nack['event_type'], 'nack')
         self.assertEqual(nack['user_message_id'], msg['message_id'])
-        self.assertEqual(
-            nack['nack_reason'].splitlines()[0],
-            'Failed to send message: Invalid token (redirected)'
+        self.assertSubstring(
+            'Failed to send message: Invalid token (redirected)',
+            nack['nack_reason']
             )
 
     @inlineCallbacks
