@@ -78,12 +78,20 @@ class TestTelegramTransport(VumiTestCase):
                 yield req.finish()
 
     def test_get_outbound_url(self):
+        """
+        Our helper method for building outbound URLs should build URLs using
+        the Telegram API URL, our bot token, and the applicable method (path)
+        """
         test_url = self.transport.get_outbound_url('myPath')
         self.assertEqual(test_url, '%s%s/%s' %
                          (self.API_URL, self.TOKEN, 'myPath'))
 
     @inlineCallbacks
     def test_setup_webhook_no_errors(self):
+        """
+        We should log successful webhook setup and our request should be
+        in the proper format
+        """
         d = self.transport.setup_webhook()
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'setWebhook')
@@ -104,6 +112,9 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_setup_webhook_with_errors(self):
+        """
+        We should log error messages received during webhook setup
+        """
         d = self.transport.setup_webhook()
         req = yield self.get_next_request()
 
@@ -117,6 +128,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_setup_webhook_with_invalid_token(self):
+        """
+        We should log cases where our request to set up a webhook is redirected
+        due to our bot token being invalid
+        """
         d = self.transport.setup_webhook()
         req = yield self.get_next_request()
 
@@ -131,6 +146,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_setup_webhook_with_unexpected_response(self):
+        """
+        We should log cases where our request to set up a webhook receives a
+        response that isn't JSON (as promised by the Telegram API)
+        """
         d = self.transport.setup_webhook()
         req = yield self.get_next_request()
 
@@ -144,6 +163,10 @@ class TestTelegramTransport(VumiTestCase):
                 'Webhook setup failed: Expected JSON response', log)
 
     def test_translate_inbound_message_from_channel(self):
+        """
+        When translating a message from a channel into Vumi's preferred format,
+        we should use the channel's chat id as from_addr
+        """
         default_channel = {
             'id': 'Default channel',
             'type': 'channel',
@@ -160,6 +183,9 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(default_channel['id'], message['from_addr'])
 
     def test_translate_inbound_message_from_user(self):
+        """
+        We should translate a Telegram message object into a Vumi message
+        """
         inbound_msg = {
             'message_id': 'Message from Telegram user',
             'chat': 'Random chat',
@@ -174,6 +200,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_inbound_update(self):
+        """
+        We should be able to receive updates from Telegram and publish them
+        as Vumi messages, as well as log the receipt
+        """
         update = {
             'update_id': 'update_id',
             'message': {
@@ -210,6 +240,9 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_inbound_non_message_update(self):
+        """
+        We should log receipt of non-message updates and discard them
+        """
         update = json.dumps({
             'update_id': 'update_id',
             'object': 'This is not a message...',
@@ -224,6 +257,9 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_inbound_non_text_message(self):
+        """
+        We should log receipt of non-text messages and discard them
+        """
         update = json.dumps({
             'update_id': 'update_id',
             'message': {
@@ -241,6 +277,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_outbound_message_no_errors(self):
+        """
+        We should be able to send a message to Telegram as a POST request, and
+        publish an ack when we receive a positive response
+        """
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'sendMessage')
         msg = self.helper.make_outbound(
@@ -269,6 +309,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_outbound_message_with_errors(self):
+        """
+        We should publish a nack when we get an error response from Telegram
+        while trying to send a message
+        """
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id']
@@ -289,6 +333,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_outbound_message_with_unexpected_response(self):
+        """
+        We should publish a nack when we get a response from Telegram that
+        isn't JSON when trying to send a message
+        """
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id']
@@ -309,6 +357,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_outbound_message_with_invalid_token(self):
+        """
+        We should publish a nack when our request to Telegram is redirected
+        due to our bot token being invalid when trying to send a message
+        """
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id'],
@@ -331,6 +383,10 @@ class TestTelegramTransport(VumiTestCase):
 
     @inlineCallbacks
     def test_outbound_failure(self):
+        """
+        Our helper method for publishing nacks should publish the correct
+        reason and message_id
+        """
         yield self.transport.outbound_failure(message_id='id', reason='error')
         [nack] = yield self.helper.wait_for_dispatched_events(1)
         self.assertEqual(nack['event_type'], 'nack')
