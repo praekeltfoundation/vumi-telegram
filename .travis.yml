@@ -1,0 +1,30 @@
+sudo: false
+language: python
+python:
+  - "2.7"
+matrix:
+  include:
+    - python: "pypy"
+      env: PYPY_VERSION="5.3" NO_COVERAGE=1 PYTHON_BUILD_CACHE_PATH="$HOME/pyenv-cache"
+cache:
+  - pip
+  - directories:
+    - $HOME/pyenv-cache
+before_install:
+  # If necessary, set up an appropriate version of pypy. Also, double check that
+  # Python version is correct (fgrep returns 1 if not and Travis halts).
+  - |
+      if [[ -n "$PYPY_VERSION" ]]; then
+        source .travis/setup-pypy.sh
+        python --version 2>&1 | fgrep "PyPy $PYPY_VERSION"
+      fi
+install:
+  - pip install -r requirements.txt
+  - pip install flake8
+  - pip install coveralls
+script:
+  - if [ -z "$NO_COVERAGE" ]; then COVERAGE_CMD="coverage run --source=telegram"; else COVERAGE_CMD=""; fi
+  - VUMITEST_REDIS_DB=1 $COVERAGE_CMD `which trial` telegram
+  - flake8 telegram
+after_success:
+  - if [ -z "$NO_COVERAGE" ]; then coveralls; fi
