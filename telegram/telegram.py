@@ -164,24 +164,55 @@ class TelegramTransport(HttpRpcTransport):
                 headers={'Content-Type': ['application/json']},
             )
         # Telegram redirects our request if our bot token is invalid
-        except ResponseFailed as e:
-            yield self.outbound_failure(message_id,
-                                        'Invalid token (redirected)\n%s' % e)
+        except ResponseFailed as error:
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Invalid bot token (redirected)',
+                error=error,
+            )
             return
         try:
             res = yield r.json()
-        except ValueError as e:
-            yield self.outbound_failure(message_id,
-                                        'Expected JSON response\n%s' % e)
+        except ValueError as error:
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Expected JSON response',
+                error=error,
+            )
             return
 
         if r.code == http.OK and res['ok']:
-            yield self.publish_ack(user_message_id=message_id,
-                                   sent_message_id=message_id)
+            yield self.outbound_success(message_id)
         else:
-            yield self.outbound_failure(message_id, res['description'])
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Bad response from Telegram',
+                error=res['description'],
+            )
 
     @inlineCallbacks
-    def outbound_failure(self, message_id, reason):
-        yield self.publish_nack(message_id, 'Failed to send message: %s' %
-                                reason)
+    def outbound_failure(self, message_id, message, error):
+        yield self.publish_nack(message_id, '%s\n%s' % (message, error))
+        yield self.publish_status_bad_outbound(message, error)
+
+    @inlineCallbacks
+    def outbound_success(self, message_id):
+        yield self.publish_ack(message_id, message_id)
+        yield self.publish_status_good_outbound()
+
+    def publish_status_bad_outbound(self, message, error):
+        return self.add_status(
+            status='down',
+            component='telegram_outbound',
+            type='bad_outbound',
+            message=message,
+            error=error,
+        )
+
+    def publish_status_good_outbound(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_outbound',
+            type='good_outbound',
+            message='Outbound request successful',
+        )
