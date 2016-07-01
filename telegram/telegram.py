@@ -63,7 +63,9 @@ class TelegramTransport(HttpRpcTransport):
         # Telegram redirects our request if our bot token is invalid
         except ResponseFailed as e:
             self.log.warning(
-                'Webhook setup failed: Invalid token (redirected)\n%s' % e)
+                'Webhook setup failed: Invalid bot token (redirected)\n%s' % e)
+            yield self.publish_status_bad_webhook(
+                'Invalid bot token (redirected)', str(e.message))
             return
 
         try:
@@ -71,16 +73,22 @@ class TelegramTransport(HttpRpcTransport):
         except ValueError as e:
             self.log.warning(
                 'Webhook setup failed: Expected JSON response\n%s' % e)
+            yield self.publish_status_bad_webhook('Expected JSON response',
+                                                  e.message)
             return
 
         if r.code == http.OK and res['ok']:
             self.log.info('Webhook set up on %s' % self.inbound_url)
+            yield self.publish_status_good_webhook()
         else:
             self.log.warning('Webhook setup failed: %s' % res['description'])
+            yield self.publish_status_bad_webhook('Bad response from Telegram',
+                                                  res['description'])
 
     @inlineCallbacks
     def setup_transport(self):
         yield super(TelegramTransport, self).setup_transport()
+        yield self.publish_status_starting()
         config = self.get_static_config()
         self.api_url = '%s%s' % (config.outbound_url.geturl().rstrip('/'),
                                  config.bot_token)
@@ -164,20 +172,20 @@ class TelegramTransport(HttpRpcTransport):
                 headers={'Content-Type': ['application/json']},
             )
         # Telegram redirects our request if our bot token is invalid
-        except ResponseFailed as error:
+        except ResponseFailed as e:
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Invalid bot token (redirected)',
-                error=error,
+                error=str(e.message),
             )
             return
         try:
             res = yield r.json()
-        except ValueError as error:
+        except ValueError as e:
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Expected JSON response',
-                error=error,
+                error=e.message,
             )
             return
 
@@ -215,4 +223,29 @@ class TelegramTransport(HttpRpcTransport):
             component='telegram_outbound',
             type='good_outbound',
             message='Outbound request successful',
+        )
+
+    def publish_status_starting(self):
+        return self.add_status(
+            status='down',
+            component='telegram_setup',
+            type='starting',
+            message='Telegram transport starting...',
+        )
+
+    def publish_status_good_webhook(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_webhook',
+            type='good_webhook',
+            message='Webhook setup successful',
+        )
+
+    def publish_status_bad_webhook(self, message, error):
+        return self.add_status(
+            status='down',
+            component='telegram_webhook',
+            type='bad_webhook',
+            message=message,
+            error=error,
         )

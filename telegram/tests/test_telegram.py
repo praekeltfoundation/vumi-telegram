@@ -75,6 +75,19 @@ class TestTelegramTransport(VumiTestCase):
                 yield req.finish()
 
     @inlineCallbacks
+    def test_starting_status(self):
+        """
+        Our transport should publish a 'down' status while setting up
+        """
+        yield self.get_transport(publish_status=True)
+        self.assert_status(
+            status='down',
+            comp='telegram_setup',
+            status_type='starting',
+            msg='Telegram transport starting...'
+        )
+
+    @inlineCallbacks
     def test_get_outbound_url(self):
         """
         Our helper method for building outbound URLs should build URLs using
@@ -91,7 +104,7 @@ class TestTelegramTransport(VumiTestCase):
         We should log successful webhook setup and our request should be
         in the proper format
         """
-        transport = yield self.get_transport()
+        transport = yield self.get_transport(publish_status=True)
         d = transport.setup_webhook()
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'setWebhook')
@@ -110,12 +123,19 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(log, 'Webhook set up on www.example.com')
 
+        self.assert_status(
+            status='ok',
+            comp='telegram_webhook',
+            status_type='good_webhook',
+            msg='Webhook setup successful'
+        )
+
     @inlineCallbacks
     def test_setup_webhook_with_errors(self):
         """
         We should log error messages received during webhook setup
         """
-        transport = yield self.get_transport()
+        transport = yield self.get_transport(publish_status=True)
         d = transport.setup_webhook()
         req = yield self.get_next_request()
 
@@ -125,7 +145,16 @@ class TestTelegramTransport(VumiTestCase):
             req.finish()
             yield d
             [log] = lc.messages()
-            self.assertEqual(log, 'Webhook setup failed: Bad request')
+            self.assertEqual(log, 'Webhook setup failed: %s' %
+                             self.bad_telegram_response['description'])
+
+        self.assert_status(
+            status='down',
+            comp='telegram_webhook',
+            status_type='bad_webhook',
+            msg='Bad response from Telegram',
+            error=self.bad_telegram_response['description']
+        )
 
     @inlineCallbacks
     def test_setup_webhook_with_invalid_token(self):
@@ -133,7 +162,7 @@ class TestTelegramTransport(VumiTestCase):
         We should log cases where our request to set up a webhook is redirected
         due to our bot token being invalid
         """
-        transport = yield self.get_transport()
+        transport = yield self.get_transport(publish_status=True)
         d = transport.setup_webhook()
         req = yield self.get_next_request()
 
@@ -144,7 +173,15 @@ class TestTelegramTransport(VumiTestCase):
             yield d
             [log] = lc.messages()
             self.assertSubstring(
-                'Webhook setup failed: Invalid token (redirected)', log)
+                'Webhook setup failed: Invalid bot token (redirected)', log)
+
+        self.assert_status(
+            status='down',
+            comp='telegram_webhook',
+            status_type='bad_webhook',
+            msg='Invalid bot token (redirected)',
+            # TODO: assert error?
+        )
 
     @inlineCallbacks
     def test_setup_webhook_with_unexpected_response(self):
@@ -291,7 +328,7 @@ class TestTelegramTransport(VumiTestCase):
         We should be able to send a message to Telegram as a POST request, and
         publish an ack and an 'ok' status when we receive a positive response
         """
-        yield self.get_transport()
+        yield self.get_transport(publish_status=True)
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'sendMessage')
         msg = self.helper.make_outbound(
@@ -327,7 +364,7 @@ class TestTelegramTransport(VumiTestCase):
         We should publish a nack and a 'down' status when we get an error
         response from Telegram while trying to send a message
         """
-        yield self.get_transport()
+        yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id']
@@ -356,7 +393,7 @@ class TestTelegramTransport(VumiTestCase):
         We should publish a nack and a 'down' status when our request to
         Telegram gets a response that isn't JSON
         """
-        yield self.get_transport()
+        yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id']
@@ -384,7 +421,7 @@ class TestTelegramTransport(VumiTestCase):
         We should publish a nack and a 'down' status when our request to
         Telegram is redirected due to our bot token being invalid
         """
-        yield self.get_transport()
+        yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
             content='Outbound message!',
             to_addr=self.default_user['id'],
@@ -412,7 +449,7 @@ class TestTelegramTransport(VumiTestCase):
         outbound_failure is a helper method for our transport that should both
         publish a 'down' status and a nack with the correct reason
         """
-        transport = yield self.get_transport()
+        transport = yield self.get_transport(publish_status=True)
         error = self.bad_telegram_response['description']
         yield transport.outbound_failure('id', 'Failed to send message', error)
 
@@ -431,7 +468,7 @@ class TestTelegramTransport(VumiTestCase):
         outbound_success is a helper method for our transport that should both
         publish an 'ok' status and an ack
         """
-        transport = yield self.get_transport()
+        transport = yield self.get_transport(publish_status=True)
         yield transport.outbound_success(message_id='id')
 
         self.assert_ack('id')
