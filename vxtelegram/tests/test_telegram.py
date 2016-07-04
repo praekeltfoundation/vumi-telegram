@@ -151,12 +151,10 @@ class TestTelegramTransport(VumiTestCase):
             self.assertEqual(log, 'Webhook setup failed: %s' % error)
 
         # Ignore statuses published on transport startup
-        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_webhook')
         self.assertEqual(status['type'], 'bad_webhook')
-        self.assertEqual(status['message'], 'Bad response from Telegram')
-        self.assertEqual(status['details']['error'], error)
 
     @inlineCallbacks
     def test_setup_webhook_with_invalid_token(self):
@@ -180,7 +178,7 @@ class TestTelegramTransport(VumiTestCase):
             )
 
         # Ignore statuses published on transport startup
-        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_webhook')
         self.assertEqual(status['type'], 'bad_webhook')
@@ -205,11 +203,10 @@ class TestTelegramTransport(VumiTestCase):
                 'Webhook setup failed: Expected JSON response', log)
 
         # Ignore statuses published on transport startup
-        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_webhook')
         self.assertEqual(status['type'], 'bad_webhook')
-        self.assertEqual(status['message'], 'Expected JSON response')
 
     @inlineCallbacks
     def test_translate_inbound_message_from_channel(self):
