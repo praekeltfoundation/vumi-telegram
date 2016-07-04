@@ -283,6 +283,13 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(msg['transport_name'],
                          transport.transport_name)
 
+        self.assert_status(
+            status='ok',
+            comp='telegram_inbound',
+            status_type='good_inbound',
+            msg='Good inbound request'
+        )
+
     @inlineCallbacks
     def test_inbound_non_message_update(self):
         """
@@ -321,6 +328,28 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(log, 'Message is not a text message')
         self.assertEqual(res.code, http.OK)
+
+    @inlineCallbacks
+    def test_inbound_update_unexpected_format(self):
+        """
+        We should log a warning and publish a down status when we receive
+        updates that aren't in JSON format
+        """
+        yield self.get_transport(publish_status=True)
+
+        d = self.helper.mk_request(_method='POST', _data="This isn't JSON...")
+        with LogCatcher(message='unexpected') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertSubstring('Inbound update in unexpected format', log)
+        self.assertEqual(res.code, http.BAD_REQUEST)
+        self.assert_status(
+            status='down',
+            comp='telegram_inbound',
+            status_type='bad_inbound',
+            msg='Inbound update in unexpected format',
+            # TODO: assert error?
+        )
 
     @inlineCallbacks
     def test_outbound_message_no_errors(self):

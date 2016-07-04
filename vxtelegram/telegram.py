@@ -107,7 +107,17 @@ class TelegramTransport(HttpRpcTransport):
     def handle_raw_inbound_message(self, message_id, request):
         # TODO: ensure we are not receiving duplicate updates
         # TODO: support inline queries?
-        update = json.load(request.content)
+        try:
+            update = json.load(request.content)
+        except ValueError as e:
+            self.log.warning('Inbound update in unexpected format\n%s' % e)
+            yield self.publish_status_bad_inbound(
+                message='Inbound update in unexpected format',
+                error=e.message,
+            )
+            request.setResponseCode(http.BAD_REQUEST)
+            request.finish()
+            return
 
         # Ignore updates that do not contain message objects
         if 'message' not in update:
@@ -135,6 +145,7 @@ class TelegramTransport(HttpRpcTransport):
             transport_type=self.transport_type,
             transport_name=self.transport_name,
         )
+        yield self.publish_status_good_inbound()
         request.finish()
 
     def translate_inbound_message(self, message):
@@ -210,6 +221,23 @@ class TelegramTransport(HttpRpcTransport):
     def outbound_success(self, message_id):
         yield self.publish_ack(message_id, message_id)
         yield self.publish_status_good_outbound()
+
+    def publish_status_good_inbound(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_inbound',
+            type='good_inbound',
+            message='Good inbound request',
+        )
+
+    def publish_status_bad_inbound(self, message, error):
+        return self.add_status(
+            status='down',
+            component='telegram_inbound',
+            type='bad_inbound',
+            message=message,
+            error=error,
+        )
 
     def publish_status_bad_outbound(self, message, error):
         return self.add_status(
