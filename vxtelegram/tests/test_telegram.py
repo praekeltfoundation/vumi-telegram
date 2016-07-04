@@ -9,7 +9,7 @@ from vumi.tests.helpers import VumiTestCase
 from vumi.tests.fake_connection import FakeHttpServer
 from vumi.transports.httprpc.tests.helpers import HttpRpcTransportHelper
 
-from telegram.telegram import TelegramTransport
+from vxtelegram.telegram import TelegramTransport
 
 
 class TestTelegramTransport(VumiTestCase):
