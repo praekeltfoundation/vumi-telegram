@@ -44,13 +44,28 @@ class TelegramTransport(HttpRpcTransport):
 
     @classmethod
     def agent_factory(cls):
-        """For swapping out the Agent for use in tests"""
+        """
+        For swapping out the Agent for use in tests
+        """
         return Agent(reactor)
+
+    @inlineCallbacks
+    def setup_transport(self):
+        yield super(TelegramTransport, self).setup_transport()
+        yield self.publish_status_starting()
+
+        config = self.get_static_config()
+        self.api_url = '%s%s' % (config.outbound_url.geturl().rstrip('/'),
+                                 config.bot_token)
+        self.inbound_url = config.inbound_url.geturl()
+        self.bot_username = config.bot_username
+
+        yield self.setup_webhook()
 
     @inlineCallbacks
     def setup_webhook(self):
         # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
-        #       webhook setup
+        #       webhook setup, and sends requests over HTTPS only
         url = self.get_outbound_url('setWebhook')
         http_client = HTTPClient(self.agent_factory())
 
@@ -85,24 +100,13 @@ class TelegramTransport(HttpRpcTransport):
             yield self.publish_status_bad_webhook('Bad response from Telegram',
                                                   res['description'])
 
-    @inlineCallbacks
-    def setup_transport(self):
-        yield super(TelegramTransport, self).setup_transport()
-        yield self.publish_status_starting()
-        config = self.get_static_config()
-        self.api_url = '%s%s' % (config.outbound_url.geturl().rstrip('/'),
-                                 config.bot_token)
-        self.inbound_url = config.inbound_url.geturl()
-        self.bot_username = config.bot_username
-
-        yield self.setup_webhook()
-
     def get_outbound_url(self, path):
         return '%s/%s' % (self.api_url, path)
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
         # TODO: ensure we are not receiving duplicate updates
+        # TODO: support inline queries?
         update = json.load(request.content)
 
         # Ignore updates that do not contain message objects
@@ -147,12 +151,11 @@ class TelegramTransport(HttpRpcTransport):
         else:
             from_addr = message['chat']['id']
 
-        message = {
+        return {
             'content': content,
             'to_addr': to_addr,
             'from_addr': from_addr,
         }
-        return message
 
     @inlineCallbacks
     def handle_outbound_message(self, message):
