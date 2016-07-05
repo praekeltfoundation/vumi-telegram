@@ -128,8 +128,9 @@ class TestTelegramTransport(VumiTestCase):
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'ok')
         self.assertEqual(status['component'], 'telegram_webhook')
-        self.assertEqual(status['type'], 'good_webhook')
+        self.assertEqual(status['type'], 'webhook_setup_success')
         self.assertEqual(status['message'], 'Webhook setup successful')
+        self.assertEqual(status['details'], {'webhook_url': 'www.example.com'})
 
     @inlineCallbacks
     def test_setup_webhook_with_errors(self):
@@ -151,10 +152,13 @@ class TestTelegramTransport(VumiTestCase):
             self.assertEqual(log, 'Webhook setup failed: %s' % error)
 
         # Ignore statuses published on transport startup
-        [_, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_webhook')
-        self.assertEqual(status['type'], 'bad_webhook')
+        self.assertEqual(status['type'], 'bad_response')
+        self.assertEqual(status['message'],
+                         'Webhook setup failed: bad response from Telegram')
+        self.assertEqual(status['details'], {'error': error, 'res_code': 400})
 
     @inlineCallbacks
     def test_setup_webhook_with_invalid_token(self):
@@ -174,15 +178,21 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(
                 log,
-                'Webhook setup failed: Invalid bot token (redirected)'
+                'Webhook setup failed: request redirected'
             )
 
-        # Ignore statuses published on transport startup
+        # Ignore statuses published on transport startup (only one, since
+        # during tests this status is already published and doesn't repeat)
         [_, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_webhook')
-        self.assertEqual(status['type'], 'bad_webhook')
-        self.assertEqual(status['message'], 'Invalid bot token (redirected)')
+        self.assertEqual(status['type'], 'request_redirected')
+        self.assertEqual(status['message'],
+                         'Webhook setup failed: request redirected')
+        self.assertEqual(status['details'], {
+            'error': 'Unexpected redirect',
+            'res_code': 302,
+        })
 
     @inlineCallbacks
     def test_setup_webhook_with_unexpected_response(self):
@@ -202,14 +212,19 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(
                 log,
-                'Webhook setup failed: Expected JSON response (code: 500)',
+                'Webhook setup failed: unexpected response format',
             )
 
         # Ignore statuses published on transport startup
-        [_, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_webhook')
-        self.assertEqual(status['type'], 'bad_webhook')
+        self.assertEqual(status['type'], 'unexpected_response_format')
+        self.assertEqual(status['message'],
+                         'Webhook setup failed: unexpected response format')
+        self.assertEqual(status['details']['res_code'], 500)
+        self.assertEqual(status['details']['res_body'],
+                         "Wait, this isn't JSON...")
 
     @inlineCallbacks
     def test_translate_inbound_message_from_channel(self):
@@ -333,7 +348,7 @@ class TestTelegramTransport(VumiTestCase):
         with LogCatcher(message='text') as lc:
             res = yield d
             [log] = lc.messages()
-            self.assertEqual(log, 'Message is not a text message')
+            self.assertEqual(log, 'Inbound message is not a text message')
         self.assertEqual(res.code, http.OK)
 
     @inlineCallbacks
@@ -344,7 +359,7 @@ class TestTelegramTransport(VumiTestCase):
         """
         yield self.get_transport(publish_status=True)
 
-        d = self.helper.mk_request(_method='POST', _data="This isn't JSON...")
+        d = self.helper.mk_request(_method='POST', _data="This isn't JSON!")
         with LogCatcher(message='unexpected') as lc:
             res = yield d
             [log] = lc.messages()
@@ -355,9 +370,10 @@ class TestTelegramTransport(VumiTestCase):
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_inbound')
-        self.assertEqual(status['type'], 'bad_inbound')
+        self.assertEqual(status['type'], 'unexpected_update_format')
         self.assertEqual(status['message'],
                          'Inbound update in unexpected format')
+        self.assertEqual(status['details']['req_content'], "This isn't JSON!")
 
     @inlineCallbacks
     def test_outbound_message_no_errors(self):
@@ -393,7 +409,7 @@ class TestTelegramTransport(VumiTestCase):
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'ok')
         self.assertEqual(status['component'], 'telegram_outbound')
-        self.assertEqual(status['type'], 'good_outbound')
+        self.assertEqual(status['type'], 'good_outbound_request')
         self.assertEqual(status['message'], 'Outbound request successful')
 
     @inlineCallbacks
@@ -416,18 +432,19 @@ class TestTelegramTransport(VumiTestCase):
         yield d
 
         yield self.assert_nack(msg['message_id'],
-                               'Bad response from Telegram: %s' %
-                               self.bad_telegram_response['description'],
-                               )
+                               'Message not sent: bad response from Telegram')
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_outbound')
-        self.assertEqual(status['type'], 'bad_outbound')
-        self.assertEqual(status['message'], 'Bad response from Telegram')
-        self.assertEqual(status['details']['error'],
-                         self.bad_telegram_response['description'])
+        self.assertEqual(status['type'], 'bad_response')
+        self.assertEqual(status['message'],
+                         'Message not sent: bad response from Telegram')
+        self.assertEqual(status['details'], {
+            'error': self.bad_telegram_response['description'],
+            'res_code': 400,
+        })
 
     @inlineCallbacks
     def test_outbound_message_with_unexpected_response(self):
@@ -449,15 +466,18 @@ class TestTelegramTransport(VumiTestCase):
         yield d
 
         yield self.assert_nack(msg['message_id'],
-                               'Expected JSON response: error code 500')
+                               'Message not sent: unexpected response format')
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_outbound')
-        self.assertEqual(status['type'], 'bad_outbound')
-        self.assertEqual(status['message'], 'Expected JSON response')
-        self.assertEqual(status['details']['error'], 'error code 500')
+        self.assertEqual(status['type'], 'unexpected_response_format')
+        self.assertEqual(status['message'],
+                         'Message not sent: unexpected response format')
+        self.assertEqual(status['details']['res_code'], 500)
+        self.assertEqual(status['details']['res_body'],
+                         "Wait, this isn't JSON...")
 
     @inlineCallbacks
     def test_outbound_message_with_invalid_token(self):
@@ -479,14 +499,19 @@ class TestTelegramTransport(VumiTestCase):
         yield d
 
         yield self.assert_nack(msg['message_id'],
-                               'Invalid bot token (redirected)')
+                               'Message not sent: request redirected')
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_outbound')
-        self.assertEqual(status['type'], 'bad_outbound')
-        self.assertEqual(status['message'], 'Invalid bot token (redirected)')
+        self.assertEqual(status['type'], 'request_redirected')
+        self.assertEqual(status['message'],
+                         'Message not sent: request redirected')
+        self.assertEqual(status['details'], {
+            'error': 'Unexpected redirect',
+            'res_code': 302,
+        })
 
     @inlineCallbacks
     def test_outbound_failure(self):
@@ -496,15 +521,19 @@ class TestTelegramTransport(VumiTestCase):
         """
         transport = yield self.get_transport(publish_status=True)
         error = self.bad_telegram_response['description']
-        yield transport.outbound_failure('id', 'Failed to send message', error)
-        yield self.assert_nack('id', 'Failed to send message: %s' % error)
+        yield transport.outbound_failure(
+            status_type='test',
+            message_id='id',
+            message='Some kind of error',
+            details={'error': error})
+        yield self.assert_nack('id', 'Some kind of error')
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'down')
         self.assertEqual(status['component'], 'telegram_outbound')
-        self.assertEqual(status['type'], 'bad_outbound')
-        self.assertEqual(status['message'], 'Failed to send message')
+        self.assertEqual(status['type'], 'test')
+        self.assertEqual(status['message'], 'Some kind of error')
         self.assertEqual(status['details']['error'], error)
 
     @inlineCallbacks
@@ -521,7 +550,7 @@ class TestTelegramTransport(VumiTestCase):
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assertEqual(status['status'], 'ok')
         self.assertEqual(status['component'], 'telegram_outbound')
-        self.assertEqual(status['type'], 'good_outbound')
+        self.assertEqual(status['type'], 'good_outbound_request')
         self.assertEqual(status['message'], 'Outbound request successful')
 
     @inlineCallbacks
