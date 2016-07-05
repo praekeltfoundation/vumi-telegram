@@ -280,7 +280,7 @@ class TelegramTransport(HttpRpcTransport):
         else:
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Message not sent: bad response from telegram',
+                message='Message not sent: bad response from Telegram',
                 status_type='bad_response',
                 details={
                     'error': res['description'],
