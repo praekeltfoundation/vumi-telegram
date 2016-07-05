@@ -84,7 +84,7 @@ class TelegramTransport(HttpRpcTransport):
 
         try:
             res = yield r.json()
-        except ValueError as e:
+        except ValueError:
             self.log.warning(
                 'Webhook setup failed: Expected JSON response (code: %s)' % (
                     r.code))
@@ -110,7 +110,7 @@ class TelegramTransport(HttpRpcTransport):
         try:
             update = json.load(request.content)
         except ValueError as e:
-            self.log.warning('Inbound update in unexpected format\n%s' % e)
+            self.log.warning('Inbound update in unexpected format: %s' % e)
             yield self.add_status_bad_inbound(
                 message='Inbound update in unexpected format',
                 error=e.message,
@@ -203,7 +203,7 @@ class TelegramTransport(HttpRpcTransport):
 
         try:
             res = yield r.json()
-        except ValueError as e:
+        except ValueError:
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Expected JSON response',
