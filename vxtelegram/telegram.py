@@ -86,9 +86,10 @@ class TelegramTransport(HttpRpcTransport):
             res = yield r.json()
         except ValueError as e:
             self.log.warning(
-                'Webhook setup failed: Expected JSON response\n%s' % e)
+                'Webhook setup failed: Expected JSON response (code: %s)' % (
+                    r.code))
             yield self.add_status_bad_webhook('Expected JSON response',
-                                              error=e.message)
+                                              error=r.code)
             return
 
         if r.code == http.OK and res['ok']:
@@ -206,7 +207,7 @@ class TelegramTransport(HttpRpcTransport):
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Expected JSON response',
-                error=e.message,
+                error='error code %s' % r.code,
             )
             return
 
@@ -223,7 +224,7 @@ class TelegramTransport(HttpRpcTransport):
     def outbound_failure(self, message_id, message, error=None):
         if error is None:
             error = ''
-        yield self.publish_nack(message_id, '%s\n%s' % (message, error))
+        yield self.publish_nack(message_id, '%s: %s' % (message, error))
         yield self.add_status_bad_outbound(message, error)
 
     @inlineCallbacks
