@@ -147,10 +147,10 @@ class TelegramTransport(HttpRpcTransport):
     def handle_raw_inbound_message(self, message_id, request):
         # TODO: ensure we are not receiving duplicate updates
         # TODO: support inline queries
+        content = yield request.content.read()
         try:
-            update = json.load(request.content)
+            update = json.loads(content)
         except ValueError as e:
-            content = yield request.content.read()
             self.log.warning('Inbound update in unexpected format: %s' % e)
             yield self.add_status_bad_inbound(
                 status_type='unexpected_update_format',
