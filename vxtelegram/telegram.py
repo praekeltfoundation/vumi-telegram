@@ -67,29 +67,43 @@ class TelegramTransport(HttpRpcTransport):
         #       webhook setup, and sends requests over HTTPS only
         url = self.get_outbound_url('setWebhook')
         http_client = HTTPClient(self.agent_factory())
+
         r = yield http_client.post(
             url=url,
             data=json.dumps({'url': self.inbound_url}),
             headers={'Content-Type': ['application/json']},
             allow_redirects=False,
-            )
+        )
 
-        # Telegram redirects our request if our bot token is invalid
+        # Telegram redirects our request if our token is in an invalid format
         if r.code == http.FOUND:
-            self.log.warning(
-                'Webhook setup failed: Invalid bot token (redirected)')
+            self.log.warning('Webhook setup failed: request redirected')
             yield self.add_status_bad_webhook(
-                'Invalid bot token (redirected)')
+                status_type='request_redirected',
+                message='Webhook setup failed: request redirected',
+                details={
+                    'error': 'Unexpected redirect',
+                    'res_code': http.FOUND,
+                },
+            )
             return
 
         try:
             res = yield r.json()
-        except ValueError:
+        except ValueError as e:
+            content = yield r.content()
             self.log.warning(
-                'Webhook setup failed: Expected JSON response (code: %s)' % (
-                    r.code))
-            yield self.add_status_bad_webhook('Expected JSON response',
-                                              error=r.code)
+                'Webhook setup failed: unexpected response format'
+            )
+            yield self.add_status_bad_webhook(
+                status_type='unexpected_response_format',
+                message='Webhook setup failed: unexpected response format',
+                details={
+                    'error': e.message,
+                    'res_code': r.code,
+                    'res_body': content,
+                },
+            )
             return
 
         if r.code == http.OK and res['ok']:
@@ -97,8 +111,34 @@ class TelegramTransport(HttpRpcTransport):
             yield self.add_status_good_webhook()
         else:
             self.log.warning('Webhook setup failed: %s' % res['description'])
-            yield self.add_status_bad_webhook('Bad response from Telegram',
-                                              error=res['description'])
+            yield self.add_status_bad_webhook(
+                status_type='bad_response',
+                message='Webhook setup failed: bad response from Telegram',
+                details={
+                    'error': res['description'],
+                    'res_code': r.code,
+                }
+            )
+
+    def add_status_good_webhook(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_webhook',
+            type='webhook_setup_success',
+            message='Webhook setup successful',
+            details={
+                'webhook_url': self.inbound_url,
+            },
+        )
+
+    def add_status_bad_webhook(self, status_type, message, details):
+        return self.add_status(
+            status='down',
+            component='telegram_webhook',
+            type=status_type,
+            message=message,
+            details=details,
+        )
 
     def get_outbound_url(self, path):
         return '%s/%s' % (self.api_url, path)
@@ -106,14 +146,19 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
         # TODO: ensure we are not receiving duplicate updates
-        # TODO: support inline queries?
+        # TODO: support inline queries
         try:
             update = json.load(request.content)
         except ValueError as e:
+            content = yield request.content.read()
             self.log.warning('Inbound update in unexpected format: %s' % e)
             yield self.add_status_bad_inbound(
+                status_type='unexpected_update_format',
                 message='Inbound update in unexpected format',
-                error=e.message,
+                details={
+                    'error': e.message,
+                    'req_content': content,
+                },
             )
             request.setResponseCode(http.BAD_REQUEST)
             request.finish()
@@ -128,7 +173,7 @@ class TelegramTransport(HttpRpcTransport):
         # Ignore messages that aren't text messages
         message = update['message']
         if 'text' not in message:
-            self.log.info('Message is not a text message')
+            self.log.info('Inbound message is not a text message')
             request.finish()
             return
 
@@ -153,6 +198,15 @@ class TelegramTransport(HttpRpcTransport):
             transport_name=self.transport_name,
         )
         request.finish()
+
+    def add_status_bad_inbound(self, status_type, message, details):
+        return self.add_status(
+            status='down',
+            component='telegram_inbound',
+            type=status_type,
+            message=message,
+            details=details,
+        )
 
     def translate_inbound_message(self, message):
         """
@@ -196,18 +250,28 @@ class TelegramTransport(HttpRpcTransport):
         if r.code == http.FOUND:
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Invalid bot token (redirected)',
-                error='Redirected',
+                message='Message not sent: request redirected',
+                status_type='request_redirected',
+                details={
+                    'error': 'Unexpected redirect',
+                    'res_code': http.FOUND,
+                },
             )
             return
 
         try:
             res = yield r.json()
-        except ValueError:
+        except ValueError as e:
+            content = yield r.content()
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Expected JSON response',
-                error='error code %s' % r.code,
+                message='Message not sent: unexpected response format',
+                status_type='unexpected_response_format',
+                details={
+                    'error': e.message,
+                    'res_code': r.code,
+                    'res_body': content,
+                },
             )
             return
 
@@ -216,46 +280,38 @@ class TelegramTransport(HttpRpcTransport):
         else:
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Bad response from Telegram',
-                error=res['description'],
+                message='Message not sent: bad response from telegram',
+                status_type='bad_response',
+                details={
+                    'error': res['description'],
+                    'res_code': r.code,
+                },
             )
 
     @inlineCallbacks
-    def outbound_failure(self, message_id, message, error):
-        yield self.publish_nack(message_id, '%s: %s' % (message, error))
-        yield self.add_status_bad_outbound(message, error)
+    def outbound_failure(self, status_type, message_id, message, details):
+        yield self.publish_nack(message_id, message)
+        yield self.add_status_bad_outbound(status_type, message, details)
 
     @inlineCallbacks
     def outbound_success(self, message_id):
         yield self.publish_ack(message_id, message_id)
         yield self.add_status_good_outbound()
 
-    def add_status_bad_inbound(self, message, error=None):
-        details = {}
-        if error is not None:
-            details.update({'error': error})
-        return self.add_status(
-            status='down',
-            component='telegram_inbound',
-            type='bad_inbound',
-            message=message,
-            details=details,
-        )
-
-    def add_status_bad_outbound(self, message, error):
+    def add_status_bad_outbound(self, status_type, message, details):
         return self.add_status(
             status='down',
             component='telegram_outbound',
-            type='bad_outbound',
+            type=status_type,
             message=message,
-            details={'error': error},
+            details=details,
         )
 
     def add_status_good_outbound(self):
         return self.add_status(
             status='ok',
             component='telegram_outbound',
-            type='good_outbound',
+            type='good_outbound_request',
             message='Outbound request successful',
         )
 
@@ -265,24 +321,4 @@ class TelegramTransport(HttpRpcTransport):
             component='telegram_setup',
             type='starting',
             message='Telegram transport starting...',
-        )
-
-    def add_status_good_webhook(self):
-        return self.add_status(
-            status='ok',
-            component='telegram_webhook',
-            type='good_webhook',
-            message='Webhook setup successful',
-        )
-
-    def add_status_bad_webhook(self, message, error=None):
-        details = {}
-        if error is not None:
-            details.update({'error': error})
-        return self.add_status(
-            status='down',
-            component='telegram_webhook',
-            type='bad_webhook',
-            message=message,
-            details=details,
         )
