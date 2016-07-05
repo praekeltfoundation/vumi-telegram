@@ -221,9 +221,7 @@ class TelegramTransport(HttpRpcTransport):
             )
 
     @inlineCallbacks
-    def outbound_failure(self, message_id, message, error=None):
-        if error is None:
-            error = ''
+    def outbound_failure(self, message_id, message, error):
         yield self.publish_nack(message_id, '%s: %s' % (message, error))
         yield self.add_status_bad_outbound(message, error)
 
@@ -244,16 +242,13 @@ class TelegramTransport(HttpRpcTransport):
             details=details,
         )
 
-    def add_status_bad_outbound(self, message, error=None):
-        details = {}
-        if error is not None:
-            details.update({'error': error})
+    def add_status_bad_outbound(self, message, error):
         return self.add_status(
             status='down',
             component='telegram_outbound',
             type='bad_outbound',
             message=message,
-            details=details,
+            details={'error': error},
         )
 
     def add_status_good_outbound(self):
