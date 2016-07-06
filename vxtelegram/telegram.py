@@ -146,7 +146,6 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
         # TODO: ensure we are not receiving duplicate updates
-        # TODO: support inline queries
         content = yield request.content.read()
         try:
             update = json.loads(content)
