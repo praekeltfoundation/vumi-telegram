@@ -149,7 +149,10 @@ class TestTelegramTransport(VumiTestCase):
             req.finish()
             yield d
             [log] = lc.messages()
-            self.assertEqual(log, 'Webhook setup failed: %s' % error)
+            self.assertEqual(
+                log,
+                'Webhook setup failed: bad response from Telegram'
+            )
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
@@ -352,7 +355,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(msg['from_addr'], self.default_user['id'])
         self.assertEqual(msg['transport_type'], transport.transport_type)
         self.assertEqual(msg['transport_name'], transport.transport_name)
-        self.assertEqual(msg['transport_metadata'], {
+        self.assertEqual(msg['helper_metadata'], {
             'message_type': 'inline_query',
             'details': {'query': 'Do something, bot!'}
         })
@@ -419,6 +422,57 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(status['message'],
                          'Inbound update in unexpected format')
         self.assertEqual(status['details']['req_content'], "This isn't JSON!")
+
+    @inlineCallbacks
+    def test_outbound_query_reply_no_errors(self):
+        """
+        We should be able to reply to inline queries using POST requests, and
+        publish an ack and an 'ok' status when we receive a positive response
+        """
+        yield self.get_transport(publish_status=True)
+        expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
+                                    'answerInlineQuery')
+
+        results = [{
+            'type': 'article',
+            'url': 'www.example.com',
+            'title': 'Example',
+            'id': '12345678',
+            'input_message_content': {'message_text': 'Hello, world!'},
+        }]
+        msg = self.helper.make_outbound(
+            content=None,
+            to_addr=self.default_user['id'],
+            from_addr=self.bot_username,
+            transport_metadata={
+                'type': 'inline',
+                'query_id': '1234',
+                'results': results,
+            },
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        self.assertEqual(req.method, 'POST')
+        self.assertEqual(req.path, expected_url)
+
+        outbound_msg = json.load(req.content)
+        self.assertEqual(outbound_msg['inline_query_id'], '1234')
+        self.assertEqual(outbound_msg['results'], results)
+
+        # TODO: check that this is actually the response we would get
+        req.write(json.dumps({'ok': True}))
+        req.finish()
+        yield d
+
+        self.assert_ack(msg['message_id'])
+
+        # Ignore statuses published on transport startup
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        self.assertEqual(status['status'], 'ok')
+        self.assertEqual(status['component'], 'telegram_outbound')
+        self.assertEqual(status['type'], 'good_outbound_request')
+        self.assertEqual(status['message'], 'Outbound request successful')
 
     @inlineCallbacks
     def test_outbound_message_no_errors(self):
