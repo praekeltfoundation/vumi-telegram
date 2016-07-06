@@ -313,6 +313,51 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(msg['transport_name'], transport.transport_name)
 
     @inlineCallbacks
+    def test_inbound_inline_query(self):
+        """
+        We should be able to receive inline queries from Telegram and publish
+        them as Vumi messages, as well as log the receipt and update status
+        """
+        transport = yield self.get_transport(publish_status=True)
+        expected_log = (
+            'TelegramTransport receiving inline query from %s to %s' %
+            (self.default_user['id'], self.bot_username)
+        )
+        update = {
+            'update_id': 'update_id',
+            'inline_query': {
+                'id': 1234,
+                'from': self.default_user,
+                'query': 'Do something, bot!'
+            }
+        }
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
+
+        with LogCatcher(message='inline') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, expected_log)
+        self.assertEqual(res.code, http.OK)
+
+        # Ignore statuses published on transport startup
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        self.assertEqual(status['status'], 'ok')
+        self.assertEqual(status['component'], 'telegram_inbound')
+        self.assertEqual(status['type'], 'good_inbound')
+        self.assertEqual(status['message'], 'Good inbound request')
+
+        [msg] = yield self.helper.wait_for_dispatched_inbound(1)
+        self.assertEqual(msg['content'], None)
+        self.assertEqual(msg['to_addr'], self.bot_username)
+        self.assertEqual(msg['from_addr'], self.default_user['id'])
+        self.assertEqual(msg['transport_type'], transport.transport_type)
+        self.assertEqual(msg['transport_name'], transport.transport_name)
+        self.assertEqual(msg['transport_metadata'], {
+            'message_type': 'inline_query',
+            'details': {'query': 'Do something, bot!'}
+        })
+
+    @inlineCallbacks
     def test_inbound_non_message_update(self):
         """
         We should log receipt of non-message updates and discard them
@@ -561,10 +606,7 @@ class TestTelegramTransport(VumiTestCase):
         [nack] = yield self.helper.wait_for_dispatched_events(1)
         self.assertEqual(nack['event_type'], 'nack')
         self.assertEqual(nack['user_message_id'], message_id)
-
-        # NOTE: this tests for substrings since the exception raised is
-        #       appended to the nack reason
-        self.assertSubstring(reason, nack['nack_reason'])
+        self.assertEqual(reason, nack['nack_reason'])
 
     @inlineCallbacks
     def assert_ack(self, message_id):
