@@ -3,7 +3,7 @@ import json
 from treq.client import HTTPClient
 
 from twisted.internet import reactor
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.web import http
 from twisted.web.client import Agent
 
@@ -75,49 +75,16 @@ class TelegramTransport(HttpRpcTransport):
             allow_redirects=False,
         )
 
-        # Telegram redirects our request if our token is in an invalid format
-        if r.code == http.FOUND:
-            self.log.warning('Webhook setup failed: request redirected')
-            yield self.add_status_bad_webhook(
-                status_type='request_redirected',
-                message='Webhook setup failed: request redirected',
-                details={
-                    'error': 'Unexpected redirect',
-                    'res_code': http.FOUND,
-                },
-            )
-            return
-
-        try:
-            res = yield r.json()
-        except ValueError as e:
-            content = yield r.content()
-            self.log.warning(
-                'Webhook setup failed: unexpected response format'
-            )
-            yield self.add_status_bad_webhook(
-                status_type='unexpected_response_format',
-                message='Webhook setup failed: unexpected response format',
-                details={
-                    'error': e.message,
-                    'res_code': r.code,
-                    'res_body': content,
-                },
-            )
-            return
-
-        if r.code == http.OK and res['ok']:
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
             self.log.info('Webhook set up on %s' % self.inbound_url)
             yield self.add_status_good_webhook()
         else:
-            self.log.warning('Webhook setup failed: %s' % res['description'])
+            self.log.warning('Webhook setup failed: %s' % validate['message'])
             yield self.add_status_bad_webhook(
-                status_type='bad_response',
-                message='Webhook setup failed: bad response from Telegram',
-                details={
-                    'error': res['description'],
-                    'res_code': r.code,
-                }
+                status_type=validate['status'],
+                message='Webhook setup failed: %s' % validate['message'],
+                details=validate['details'],
             )
 
     def add_status_good_webhook(self):
@@ -233,7 +200,7 @@ class TelegramTransport(HttpRpcTransport):
             from_addr=inline_query['from']['id'],
             transport_type=self.transport_type,
             transport_name=self.transport_name,
-            transport_metadata={
+            helper_metadata={
                 'message_type': 'inline_query',
                 'details': {
                     'query': inline_query['query'],
@@ -272,6 +239,14 @@ class TelegramTransport(HttpRpcTransport):
     def handle_outbound_message(self, message):
         # TODO: handle direct replies
         message_id = message['message_id']
+
+        # Handle replies to inline queries separately from text messages
+        if 'type' in message['transport_metadata']:
+            is_inline = (message['transport_metadata']['type'] == 'inline')
+            if is_inline:
+                yield self.handle_outbound_inline_query(message_id, message)
+                return
+
         outbound_msg = {
             'chat_id': message['to_addr'],
             'text': message['content'],
@@ -286,47 +261,93 @@ class TelegramTransport(HttpRpcTransport):
             allow_redirects=False,
         )
 
-        # Telegram redirects our request if our bot token is invalid
-        if r.code == http.FOUND:
-            yield self.outbound_failure(
-                message_id=message_id,
-                message='Message not sent: request redirected',
-                status_type='request_redirected',
-                details={
-                    'error': 'Unexpected redirect',
-                    'res_code': http.FOUND,
-                },
-            )
-            return
-
-        try:
-            res = yield r.json()
-        except ValueError as e:
-            content = yield r.content()
-            yield self.outbound_failure(
-                message_id=message_id,
-                message='Message not sent: unexpected response format',
-                status_type='unexpected_response_format',
-                details={
-                    'error': e.message,
-                    'res_code': r.code,
-                    'res_body': content,
-                },
-            )
-            return
-
-        if r.code == http.OK and res['ok']:
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
             yield self.outbound_success(message_id)
         else:
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Message not sent: bad response from Telegram',
-                status_type='bad_response',
-                details={
-                    'error': res['description'],
-                    'res_code': r.code,
-                },
+                message='Message not sent: %s' % validate['message'],
+                status_type=validate['status'],
+                details=validate['details'],
             )
+
+    @inlineCallbacks
+    def handle_outbound_inline_query(self, message_id, message):
+        """
+        Handles replies to inline queries. We rely on the application worker to
+        generate the result(s) and we trust that they're in the correct format.
+        """
+        url = self.get_outbound_url('answerInlineQuery')
+        http_client = HTTPClient(self.agent_factory())
+
+        outbound_query_answer = {
+            'inline_query_id': message['transport_metadata']['query_id'],
+            'results': message['transport_metadata']['results'],
+        }
+
+        r = yield http_client.post(
+            url=url,
+            data=json.dumps(outbound_query_answer),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=False,
+        )
+
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
+            yield self.outbound_success(message_id)
+        else:
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Query reply not sent: %s' % validate['message'],
+                status_type=validate['status'],
+                details=validate['details'],
+            )
+
+    @inlineCallbacks
+    def validate_outbound(self, response):
+        """
+        Checks whether a request to Telegram's API was successful, and returns
+        relevant information for publishing nacks / statuses if not.
+        """
+        if response.code == http.FOUND:
+            returnValue({
+                'success': False,
+                'message': 'request redirected',
+                'status': 'request_redirected',
+                'details': {
+                    'error': 'Unexpected redirect',
+                    'res_code': http.FOUND
+                },
+            })
+
+        try:
+            res = yield response.json()
+        except ValueError as e:
+            content = yield response.content()
+            returnValue({
+                'success': False,
+                'message': 'unexpected response format',
+                'status': 'unexpected_response_format',
+                'details': {
+                    'error': e.message,
+                    'res_code': response.code,
+                    'res_body': content,
+                },
+            })
+
+        if response.code == http.OK and res['ok']:
+            returnValue({'success': True})
+        else:
+            returnValue({
+                'success': False,
+                'message': 'bad response from Telegram',
+                'status': 'bad_response',
+                'details': {
+                    'error': res['description'],
+                    'res_code': response.code,
+                },
+            })
 
     @inlineCallbacks
     def outbound_failure(self, status_type, message_id, message, details):
