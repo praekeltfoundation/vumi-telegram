@@ -265,6 +265,7 @@ class TelegramTransport(HttpRpcTransport):
         if validate['success']:
             yield self.outbound_success(message_id)
         else:
+            # TODO: add a test for this eventuality
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Message not sent: %s' % validate['message'],
@@ -278,6 +279,10 @@ class TelegramTransport(HttpRpcTransport):
         Handles replies to inline queries. We rely on the application worker to
         generate the result(s) and we trust that they're in the correct format.
         """
+        # NB: while testing replies to inline queries with curl, every single
+        #     request got a 401 (invalid query_id) response, even though the
+        #     query_id existed and was valid each time. It's possible that this
+        #     method isn't the correct way to implement answerInlineQuery.
         url = self.get_outbound_url('answerInlineQuery')
         http_client = HTTPClient(self.agent_factory())
 
