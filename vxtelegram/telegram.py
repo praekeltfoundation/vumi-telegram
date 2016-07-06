@@ -164,6 +164,15 @@ class TelegramTransport(HttpRpcTransport):
             request.finish()
             return
 
+        # Handle inline queries separately to text messages
+        if 'inline_query' in update:
+            yield self.handle_inbound_inline_query(
+                message_id=message_id,
+                inline_query=update['inline_query'],
+            )
+            request.finish()
+            return
+
         # Ignore updates that do not contain message objects
         if 'message' not in update:
             self.log.info('Inbound update does not contain a message')
@@ -206,6 +215,38 @@ class TelegramTransport(HttpRpcTransport):
             type=status_type,
             message=message,
             details=details,
+        )
+
+    @inlineCallbacks
+    def handle_inbound_inline_query(self, message_id, inline_query):
+        # NOTE: Telegram supports multiple ways to answer inline queries with
+        #       rich content (articles, multimedia etc.) as opposed to simple
+        #       text messages.
+        #       see: https://core.telegram.org/bots/api#answerinlinequery
+        self.log.info(
+            'TelegramTransport receiving inline query from %s to %s' % (
+                inline_query['from']['id'], self.bot_username))
+
+        yield self.publish_message(
+            message_id=message_id,
+            content=None,
+            to_addr=self.bot_username,
+            from_addr=inline_query['from']['id'],
+            transport_type=self.transport_type,
+            transport_name=self.transport_name,
+            transport_metadata={
+                'message_type': 'inline_query',
+                'details': {
+                    'query': inline_query['query'],
+                },
+            },
+        )
+
+        yield self.add_status(
+            status='ok',
+            component='telegram_inbound',
+            type='good_inbound',
+            message='Good inbound request',
         )
 
     def translate_inbound_message(self, message):
