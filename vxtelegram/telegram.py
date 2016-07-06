@@ -6,7 +6,6 @@ from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from twisted.web import http
 from twisted.web.client import Agent
-from twisted.web.client import ResponseFailed
 
 from vumi.transports.httprpc.httprpc import HttpRpcTransport
 from vumi.config import ConfigText, ConfigUrl
@@ -44,43 +43,16 @@ class TelegramTransport(HttpRpcTransport):
 
     @classmethod
     def agent_factory(cls):
-        """For swapping out the Agent for use in tests"""
+        """
+        For swapping out the Agent for use in tests
+        """
         return Agent(reactor)
-
-    @inlineCallbacks
-    def setup_webhook(self):
-        # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
-        #       webhook setup
-        url = self.get_outbound_url('setWebhook')
-        http_client = HTTPClient(self.agent_factory())
-
-        try:
-            r = yield http_client.post(
-                url=url,
-                data=json.dumps({'url': self.inbound_url}),
-                headers={'Content-Type': ['application/json']}
-                )
-        # Telegram redirects our request if our bot token is invalid
-        except ResponseFailed as e:
-            self.log.warning(
-                'Webhook setup failed: Invalid token (redirected)\n%s' % e)
-            return
-
-        try:
-            res = yield r.json()
-        except ValueError as e:
-            self.log.warning(
-                'Webhook setup failed: Expected JSON response\n%s' % e)
-            return
-
-        if r.code == http.OK and res['ok']:
-            self.log.info('Webhook set up on %s' % self.inbound_url)
-        else:
-            self.log.warning('Webhook setup failed: %s' % res['description'])
 
     @inlineCallbacks
     def setup_transport(self):
         yield super(TelegramTransport, self).setup_transport()
+        yield self.add_status_starting()
+
         config = self.get_static_config()
         self.api_url = '%s%s' % (config.outbound_url.geturl().rstrip('/'),
                                  config.bot_token)
@@ -89,13 +61,108 @@ class TelegramTransport(HttpRpcTransport):
 
         yield self.setup_webhook()
 
+    @inlineCallbacks
+    def setup_webhook(self):
+        # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
+        #       webhook setup, and sends requests over HTTPS only
+        url = self.get_outbound_url('setWebhook')
+        http_client = HTTPClient(self.agent_factory())
+
+        r = yield http_client.post(
+            url=url,
+            data=json.dumps({'url': self.inbound_url}),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=False,
+        )
+
+        # Telegram redirects our request if our token is in an invalid format
+        if r.code == http.FOUND:
+            self.log.warning('Webhook setup failed: request redirected')
+            yield self.add_status_bad_webhook(
+                status_type='request_redirected',
+                message='Webhook setup failed: request redirected',
+                details={
+                    'error': 'Unexpected redirect',
+                    'res_code': http.FOUND,
+                },
+            )
+            return
+
+        try:
+            res = yield r.json()
+        except ValueError as e:
+            content = yield r.content()
+            self.log.warning(
+                'Webhook setup failed: unexpected response format'
+            )
+            yield self.add_status_bad_webhook(
+                status_type='unexpected_response_format',
+                message='Webhook setup failed: unexpected response format',
+                details={
+                    'error': e.message,
+                    'res_code': r.code,
+                    'res_body': content,
+                },
+            )
+            return
+
+        if r.code == http.OK and res['ok']:
+            self.log.info('Webhook set up on %s' % self.inbound_url)
+            yield self.add_status_good_webhook()
+        else:
+            self.log.warning('Webhook setup failed: %s' % res['description'])
+            yield self.add_status_bad_webhook(
+                status_type='bad_response',
+                message='Webhook setup failed: bad response from Telegram',
+                details={
+                    'error': res['description'],
+                    'res_code': r.code,
+                }
+            )
+
+    def add_status_good_webhook(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_webhook',
+            type='webhook_setup_success',
+            message='Webhook setup successful',
+            details={
+                'webhook_url': self.inbound_url,
+            },
+        )
+
+    def add_status_bad_webhook(self, status_type, message, details):
+        return self.add_status(
+            status='down',
+            component='telegram_webhook',
+            type=status_type,
+            message=message,
+            details=details,
+        )
+
     def get_outbound_url(self, path):
         return '%s/%s' % (self.api_url, path)
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
         # TODO: ensure we are not receiving duplicate updates
-        update = json.load(request.content)
+        # TODO: support inline queries
+        content = yield request.content.read()
+        try:
+            update = json.loads(content)
+        except ValueError as e:
+            self.log.warning('Inbound update in unexpected format: %s' % e)
+            yield self.add_status_bad_inbound(
+                status_type='unexpected_update_format',
+                message='Inbound update in unexpected format',
+                details={
+                    'error': e.message,
+                    'req_content': content,
+                },
+            )
+            request.setResponseCode(http.BAD_REQUEST)
+            request.finish()
+            return
 
         # Ignore updates that do not contain message objects
         if 'message' not in update:
@@ -106,9 +173,16 @@ class TelegramTransport(HttpRpcTransport):
         # Ignore messages that aren't text messages
         message = update['message']
         if 'text' not in message:
-            self.log.info('Message is not a text message')
+            self.log.info('Inbound message is not a text message')
             request.finish()
             return
+
+        yield self.add_status(
+            status='ok',
+            component='telegram_inbound',
+            type='good_inbound',
+            message='Good inbound request',
+        )
 
         message = self.translate_inbound_message(update['message'])
         self.log.info(
@@ -125,6 +199,15 @@ class TelegramTransport(HttpRpcTransport):
         )
         request.finish()
 
+    def add_status_bad_inbound(self, status_type, message, details):
+        return self.add_status(
+            status='down',
+            component='telegram_inbound',
+            type=status_type,
+            message=message,
+            details=details,
+        )
+
     def translate_inbound_message(self, message):
         """
         Translates inbound Telegram message into Vumi's preferred format
@@ -139,12 +222,11 @@ class TelegramTransport(HttpRpcTransport):
         else:
             from_addr = message['chat']['id']
 
-        message = {
+        return {
             'content': content,
             'to_addr': to_addr,
             'from_addr': from_addr,
         }
-        return message
 
     @inlineCallbacks
     def handle_outbound_message(self, message):
@@ -157,31 +239,86 @@ class TelegramTransport(HttpRpcTransport):
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
 
-        try:
-            r = yield http_client.post(
-                url=url,
-                data=json.dumps(outbound_msg),
-                headers={'Content-Type': ['application/json']},
-            )
+        r = yield http_client.post(
+            url=url,
+            data=json.dumps(outbound_msg),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=False,
+        )
+
         # Telegram redirects our request if our bot token is invalid
-        except ResponseFailed as e:
-            yield self.outbound_failure(message_id,
-                                        'Invalid token (redirected)\n%s' % e)
+        if r.code == http.FOUND:
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Message not sent: request redirected',
+                status_type='request_redirected',
+                details={
+                    'error': 'Unexpected redirect',
+                    'res_code': http.FOUND,
+                },
+            )
             return
+
         try:
             res = yield r.json()
         except ValueError as e:
-            yield self.outbound_failure(message_id,
-                                        'Expected JSON response\n%s' % e)
+            content = yield r.content()
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Message not sent: unexpected response format',
+                status_type='unexpected_response_format',
+                details={
+                    'error': e.message,
+                    'res_code': r.code,
+                    'res_body': content,
+                },
+            )
             return
 
         if r.code == http.OK and res['ok']:
-            yield self.publish_ack(user_message_id=message_id,
-                                   sent_message_id=message_id)
+            yield self.outbound_success(message_id)
         else:
-            yield self.outbound_failure(message_id, res['description'])
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Message not sent: bad response from Telegram',
+                status_type='bad_response',
+                details={
+                    'error': res['description'],
+                    'res_code': r.code,
+                },
+            )
 
     @inlineCallbacks
-    def outbound_failure(self, message_id, reason):
-        yield self.publish_nack(message_id, 'Failed to send message: %s' %
-                                reason)
+    def outbound_failure(self, status_type, message_id, message, details):
+        yield self.publish_nack(message_id, message)
+        yield self.add_status_bad_outbound(status_type, message, details)
+
+    @inlineCallbacks
+    def outbound_success(self, message_id):
+        yield self.publish_ack(message_id, message_id)
+        yield self.add_status_good_outbound()
+
+    def add_status_bad_outbound(self, status_type, message, details):
+        return self.add_status(
+            status='down',
+            component='telegram_outbound',
+            type=status_type,
+            message=message,
+            details=details,
+        )
+
+    def add_status_good_outbound(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_outbound',
+            type='good_outbound_request',
+            message='Outbound request successful',
+        )
+
+    def add_status_starting(self):
+        return self.add_status(
+            status='down',
+            component='telegram_setup',
+            type='starting',
+            message='Telegram transport starting...',
+        )
