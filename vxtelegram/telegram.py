@@ -279,10 +279,9 @@ class TelegramTransport(HttpRpcTransport):
         Handles replies to inline queries. We rely on the application worker to
         generate the result(s) and we trust that they're in the correct format.
         """
-        # NB: while testing replies to inline queries with curl, every single
-        #     request got a 401 (invalid query_id) response, even though the
-        #     query_id existed and was valid each time. It's possible that this
-        #     method isn't the correct way to implement answerInlineQuery.
+        # NB: inline query ids expire shockingly fast it seems. If we don't
+        #     reply to a query within a matter of seconds, our request gets a
+        #     400 response with a "QUERY_ID_INVALID" description in the body.
         url = self.get_outbound_url('answerInlineQuery')
         http_client = HTTPClient(self.agent_factory())
 
