@@ -247,6 +247,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(inbound_msg['text'], message['content'])
         self.assertEqual(self.bot_username, message['to_addr'])
         self.assertEqual(default_channel['id'], message['from_addr'])
+        self.assertEqual(inbound_msg['message_id'], message['telegram_id'])
 
     @inlineCallbacks
     def test_translate_inbound_message_from_user(self):
@@ -265,6 +266,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(inbound_msg['text'], message['content'])
         self.assertEqual(self.bot_username, message['to_addr'])
         self.assertEqual(self.default_user['id'], message['from_addr'])
+        self.assertEqual(inbound_msg['message_id'], message['telegram_id'])
 
     @inlineCallbacks
     def test_inbound_update(self):
@@ -311,6 +313,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(msg['content'], update['message']['text'])
         self.assertEqual(msg['transport_type'], transport.transport_type)
         self.assertEqual(msg['transport_name'], transport.transport_name)
+        self.assertEqual(msg['transport_metadata']['telegram_id'], 'msg_id')
 
     @inlineCallbacks
     def test_inbound_non_message_update(self):
@@ -411,6 +414,41 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(status['component'], 'telegram_outbound')
         self.assertEqual(status['type'], 'good_outbound_request')
         self.assertEqual(status['message'], 'Outbound request successful')
+
+    @inlineCallbacks
+    def test_outbound_reply_no_errors(self):
+        """
+        We should be able to reply to messages using the original message's
+        Telegram message_id (we don't assert statuses here, since we
+        already do that in test_outbound_message_no_errors)
+        """
+        yield self.get_transport()
+        expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
+                                    'sendMessage')
+
+        msg = self.helper.make_outbound(
+            content='Outbound reply!',
+            to_addr=self.default_user['id'],
+            from_addr=self.bot_username,
+            in_reply_to='original_message_id',
+            transport_metadata={'telegram_id': 1234}
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        self.assertEqual(req.method, 'POST')
+        self.assertEqual(req.path, expected_url)
+
+        outbound_msg = json.load(req.content)
+        self.assertEqual(outbound_msg['text'], msg['content'])
+        self.assertEqual(outbound_msg['chat_id'], msg['to_addr'])
+        self.assertEqual(outbound_msg['reply_to_message'], 1234)
+
+        req.write(json.dumps({'ok': True}))
+        req.finish()
+        yield d
+
+        yield self.assert_ack(msg['message_id'])
 
     @inlineCallbacks
     def test_outbound_message_with_errors(self):
