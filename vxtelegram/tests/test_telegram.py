@@ -499,6 +499,57 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
+    def test_outbound_query_reply_with_errors(self):
+        """
+        We should publish a nack and a 'down' status when we receive an error
+        response from Telegram while trying to reply to an inline query
+        """
+        yield self.get_transport(publish_status=True)
+        msg = self.helper.make_outbound(
+            content=None,
+            to_addr=self.default_user['id'],
+            from_addr=self.bot_username,
+            transport_metadata={
+                'type': 'inline_query',
+                'details': {
+                    'query_id': 'invalid_id',
+                },
+            },
+            helper_metadata={
+                'telegram': {
+                    'type': 'inline_query_reply',
+                    'results': [],
+                },
+            },
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        req.setResponseCode(http.BAD_REQUEST)
+        req.write(json.dumps({'ok': False, 'description': 'INVALID_QUERY_ID'}))
+        req.finish()
+        yield d
+
+        yield self.assert_nack(
+            msg['message_id'],
+            'Query reply not sent: bad response from Telegram',
+        )
+
+        # Ignore statuses published on transport startup
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_status(status, {
+            'status': 'down',
+            'component': 'telegram_outbound',
+            'type': 'bad_response',
+            'message': 'Query reply not sent: bad response from Telegram',
+            'details': {
+                'error': 'INVALID_QUERY_ID',
+                'res_code': 400,
+                'inline_query_id': 'invalid_id',
+            },
+        })
+
+    @inlineCallbacks
     def test_outbound_message_no_errors(self):
         """
         We should be able to send a message to Telegram as a POST request, and
