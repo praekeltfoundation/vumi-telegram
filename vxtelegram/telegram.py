@@ -195,15 +195,21 @@ class TelegramTransport(HttpRpcTransport):
 
         yield self.publish_message(
             message_id=message_id,
-            content=None,
+            content=inline_query['query'],
             to_addr=self.bot_username,
             from_addr=inline_query['from']['id'],
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             helper_metadata={
-                'message_type': 'inline_query',
+                'type': 'inline_query',
                 'details': {
-                    'query': inline_query['query'],
+                    'query_id': inline_query['id'],
+                },
+            },
+            transport_metadata={
+                'type': 'inline_query',
+                'details': {
+                    'query_id': inline_query['id'],
                 },
             },
         )
