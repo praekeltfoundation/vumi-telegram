@@ -305,6 +305,7 @@ class TelegramTransport(HttpRpcTransport):
         if validate['success']:
             yield self.outbound_success(message_id)
         else:
+            validate['details'].update({'inline_query_id': inline_query_id})
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Query reply not sent: %s' % validate['message'],
