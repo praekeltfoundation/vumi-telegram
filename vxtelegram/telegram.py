@@ -171,6 +171,9 @@ class TelegramTransport(HttpRpcTransport):
             from_addr=message['from_addr'],
             transport_type=self.transport_type,
             transport_name=self.transport_name,
+            transport_metadata={
+                'telegram_id': message['telegram_id'],
+            }
         )
         request.finish()
 
@@ -227,6 +230,7 @@ class TelegramTransport(HttpRpcTransport):
         """
         Translates inbound Telegram message into Vumi's preferred format
         """
+        telegram_id = message['message_id']
         content = message['text']
         to_addr = self.bot_username
 
@@ -238,6 +242,7 @@ class TelegramTransport(HttpRpcTransport):
             from_addr = message['chat']['id']
 
         return {
+            'telegram_id': telegram_id,
             'content': content,
             'to_addr': to_addr,
             'from_addr': from_addr,
@@ -245,7 +250,6 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_outbound_message(self, message):
-        # TODO: handle direct replies
         message_id = message['message_id']
 
         # Handle replies to inline queries separately from text messages
@@ -257,6 +261,12 @@ class TelegramTransport(HttpRpcTransport):
             'chat_id': message['to_addr'],
             'text': message['content'],
         }
+
+        # Handle direct replies
+        if message['in_reply_to'] is not None:
+            reply_to_message = message['transport_metadata']['telegram_id']
+            outbound_msg.update({'reply_to_message': reply_to_message})
+
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
 
