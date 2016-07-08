@@ -201,10 +201,12 @@ class TelegramTransport(HttpRpcTransport):
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             helper_metadata={
-                'type': 'inline_query',
-                'details': {
-                    'query_id': inline_query['id'],
-                },
+                'telegram': {
+                    'type': 'inline_query',
+                    'details': {
+                        'inline_query_id': inline_query['id']
+                    }
+                }
             },
             transport_metadata={
                 'type': 'inline_query',
@@ -247,11 +249,9 @@ class TelegramTransport(HttpRpcTransport):
         message_id = message['message_id']
 
         # Handle replies to inline queries separately from text messages
-        if 'type' in message['transport_metadata']:
-            is_inline = (message['transport_metadata']['type'] == 'inline')
-            if is_inline:
-                yield self.handle_outbound_inline_query(message_id, message)
-                return
+        if message['transport_metadata'].get('type') == 'inline_query':
+            yield self.handle_outbound_inline_query(message_id, message)
+            return
 
         outbound_msg = {
             'chat_id': message['to_addr'],
@@ -285,15 +285,13 @@ class TelegramTransport(HttpRpcTransport):
         Handles replies to inline queries. We rely on the application worker to
         generate the result(s) and we trust that they're in the correct format.
         """
-        # NB: inline query ids expire shockingly fast it seems. If we don't
-        #     reply to a query within a matter of seconds, our request gets a
-        #     400 response with a "QUERY_ID_INVALID" description in the body.
         url = self.get_outbound_url('answerInlineQuery')
         http_client = HTTPClient(self.agent_factory())
 
+        inline_query_id = message['transport_metadata']['details']['query_id']
         outbound_query_answer = {
-            'inline_query_id': message['transport_metadata']['query_id'],
-            'results': message['transport_metadata']['results'],
+            'inline_query_id': inline_query_id,
+            'results': message['helper_metadata']['telegram']['results'],
         }
 
         r = yield http_client.post(

@@ -358,16 +358,21 @@ class TestTelegramTransport(VumiTestCase):
         })
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
-        self.assertEqual(msg['content'], 'Do something, bot!')
+        self.assertEqual(msg['content'], update['inline_query']['query'])
         self.assertEqual(msg['to_addr'], self.bot_username)
         self.assertEqual(msg['from_addr'], self.default_user['id'])
         self.assertEqual(msg['transport_type'], transport.transport_type)
         self.assertEqual(msg['transport_name'], transport.transport_name)
         self.assertEqual(msg['helper_metadata'], {
-            'type': 'inline_query',
-            'details': {'query_id': '1234'},
+            'telegram': {
+                'type': 'inline_query',
+                'details': {'inline_query_id': update['inline_query']['id']}
+            }
         })
-        self.assertEqual(msg['transport_metadata'], msg['helper_metadata'])
+        self.assertEqual(msg['transport_metadata'], {
+            'type': 'inline_query',
+            'details': {'query_id': update['inline_query']['id']}
+        })
 
     @inlineCallbacks
     def test_inbound_non_message_update(self):
@@ -455,9 +460,16 @@ class TestTelegramTransport(VumiTestCase):
             to_addr=self.default_user['id'],
             from_addr=self.bot_username,
             transport_metadata={
-                'type': 'inline',
-                'query_id': '1234',
-                'results': results,
+                'type': 'inline_query',
+                'details': {
+                    'query_id': '1234',
+                },
+            },
+            helper_metadata={
+                'telegram': {
+                    'type': 'inline_query_reply',
+                    'results': results,
+                },
             },
         )
         d = self.helper.dispatch_outbound(msg)
