@@ -276,6 +276,49 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(inbound_msg['message_id'], message['telegram_id'])
 
     @inlineCallbacks
+    def test_update_lifetime(self):
+        """
+        update_ids in Redis should expire after update_lifetime has elapsed,
+        meaning they should no longer be considered duplicates
+        """
+        transport = yield self.get_transport(update_lifetime=1)
+        yield transport.mark_as_seen('update_id')
+        a = yield transport.is_duplicate('update_id')
+        self.assertTrue(a)
+
+        # Wait for update_id to expire
+        from time import sleep
+        sleep(2)
+        b = yield transport.is_duplicate('update_id')
+        self.assertFalse(b)
+
+    @inlineCallbacks
+    def test_duplicate_update(self):
+        """
+        We should log receipt of duplicate updates and discard them
+        """
+        yield self.get_transport(update_lifetime=1)
+        update = {
+            'update_id': 'first_id',
+        }
+
+        # Make initial request
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
+        with LogCatcher(message='message') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Inbound update does not contain a message')
+        self.assertEqual(res.code, http.OK)
+
+        # Make duplicate request
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
+        with LogCatcher(message='duplicate') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Received a duplicate update: first_id')
+        self.assertEqual(res.code, http.OK)
+
+    @inlineCallbacks
     def test_inbound_update(self):
         """
         We should be able to receive updates from Telegram and publish them
