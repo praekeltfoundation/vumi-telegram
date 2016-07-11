@@ -283,7 +283,7 @@ class TestTelegramTransport(VumiTestCase):
         """
         # This test is very pedantic about the value used for update_lifetime,
         # as well as how long the thread should sleep - change at your own risk
-        transport = yield self.get_transport(update_lifetime=0.2)
+        transport = yield self.get_transport(update_lifetime=1)
         yield transport.mark_as_seen(1234)
         a = yield transport.is_duplicate(1234)
         self.assertTrue(a)
