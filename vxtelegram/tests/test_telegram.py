@@ -281,18 +281,13 @@ class TestTelegramTransport(VumiTestCase):
         update_ids in Redis should expire after update_lifetime has elapsed,
         meaning they should no longer be considered duplicates
         """
-        # This test is very pedantic about the value used for update_lifetime,
-        # as well as how long the thread should sleep - change at your own risk
-        transport = yield self.get_transport(update_lifetime=1)
+        transport = yield self.get_transport(update_lifetime=10)
         yield transport.mark_as_seen(1234)
-        a = yield transport.is_duplicate(1234)
-        self.assertTrue(a)
 
-        # Wait for update_id to expire
-        from time import sleep
-        sleep(2)
-        b = yield transport.is_duplicate(1234)
-        self.assertFalse(b)
+        duplicate = yield transport.is_duplicate(1234)
+        self.assertTrue(duplicate)
+        ttl = yield transport.redis.ttl(1234)
+        self.assertTrue(ttl < 10)
 
     @inlineCallbacks
     def test_duplicate_update(self):
