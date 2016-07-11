@@ -210,9 +210,8 @@ class TelegramTransport(HttpRpcTransport):
         Adds an update_id to a list of update_ids already processed
         """
         config = self.get_static_config()
-        lifetime = config.update_lifetime
-        yield self.redis.setnx(update_id, 1)
-        yield self.redis.expire(update_id, lifetime)
+        yield self.redis.set(update_id, 1)
+        yield self.redis.expire(update_id, config.update_lifetime)
 
     def add_status_bad_inbound(self, status_type, message, details):
         return self.add_status(
