@@ -196,12 +196,15 @@ class TelegramTransport(HttpRpcTransport):
         )
         request.finish()
 
+    def get_update_id_key(self, update_id):
+        return 'update_id:%s' % update_id
+
     @inlineCallbacks
     def is_duplicate(self, update_id):
         """
         Checks to see if an incoming update has already been processed
         """
-        exists = yield self.redis.exists(update_id)
+        exists = yield self.redis.exists(self.get_update_id_key(update_id))
         returnValue(exists)
 
     @inlineCallbacks
@@ -210,8 +213,9 @@ class TelegramTransport(HttpRpcTransport):
         Adds an update_id to a list of update_ids already processed
         """
         config = self.get_static_config()
-        yield self.redis.set(update_id, 1)
-        yield self.redis.expire(update_id, config.update_lifetime)
+        key = self.get_update_id_key(update_id)
+        yield self.redis.set(key, 1)
+        yield self.redis.expire(key, config.update_lifetime)
 
     def add_status_bad_inbound(self, status_type, message, details):
         return self.add_status(
