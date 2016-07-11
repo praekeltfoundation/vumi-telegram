@@ -204,27 +204,15 @@ class TelegramTransport(HttpRpcTransport):
         exists = yield self.redis.exists(update_id)
         returnValue(exists)
 
+    @inlineCallbacks
     def mark_as_seen(self, update_id):
         """
-        Adds an update_id to a list of already processed ids
+        Adds an update_id to a list of update_ids already processed
         """
         config = self.get_static_config()
         lifetime = config.update_lifetime
-        d = self.redis.setnx(update_id, 1)
-
-        def expire(res):
-            if res:
-                return self.wrap_expire(res, update_id, lifetime)
-            else:
-                return False
-
-        d.addCallback(expire)
-        return d
-
-    def wrap_expire(self, res, update_id, lifetime):
-        d = self.redis.expire(update_id, lifetime)
-        d.addCallback(lambda _: res)
-        return d
+        yield self.redis.setnx(update_id, 1)
+        yield self.redis.expire(update_id, lifetime)
 
     def add_status_bad_inbound(self, status_type, message, details):
         return self.add_status(
