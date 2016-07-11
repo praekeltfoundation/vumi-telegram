@@ -281,7 +281,9 @@ class TestTelegramTransport(VumiTestCase):
         update_ids in Redis should expire after update_lifetime has elapsed,
         meaning they should no longer be considered duplicates
         """
-        transport = yield self.get_transport(update_lifetime=1)
+        # This test is very pedantic about the value used for update_lifetime,
+        # as well as how long the thread should sleep - change at your own risk
+        transport = yield self.get_transport(update_lifetime=0.2)
         yield transport.mark_as_seen('update_id')
         a = yield transport.is_duplicate('update_id')
         self.assertTrue(a)
@@ -297,7 +299,7 @@ class TestTelegramTransport(VumiTestCase):
         """
         We should log receipt of duplicate updates and discard them
         """
-        yield self.get_transport(update_lifetime=1)
+        yield self.get_transport()
         update = {
             'update_id': 'first_id',
         }

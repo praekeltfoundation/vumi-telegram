@@ -9,7 +9,7 @@ from twisted.web.client import Agent
 
 from vumi.transports.httprpc.httprpc import HttpRpcTransport
 from vumi.persist.txredis_manager import TxRedisManager
-from vumi.config import ConfigText, ConfigUrl, ConfigDict, ConfigInt
+from vumi.config import ConfigText, ConfigUrl, ConfigDict, ConfigFloat
 
 
 class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
@@ -33,11 +33,11 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         'Parameters to connect to Redis with', default={}, static=True,
         required=False,
     )
-    update_lifetime = ConfigInt(
+    update_lifetime = ConfigFloat(
         'Time to store updates for to ensure we are not receiving dupllicates',
         # Defaults to 24 hours, since that is how long Telegram stores updates
         # on their servers
-        default=(60 * 60 * 24), static=True, required=False,
+        default=(60 * 60 * 24.0), static=True, required=False,
     )
 
 
