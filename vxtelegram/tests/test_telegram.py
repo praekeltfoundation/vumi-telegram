@@ -287,7 +287,7 @@ class TestTelegramTransport(VumiTestCase):
         duplicate = yield transport.is_duplicate(1234)
         self.assertTrue(duplicate)
         ttl = yield transport.redis.ttl(1234)
-        self.assertTrue(ttl < 10)
+        self.assertTrue(ttl <= 10)
 
     @inlineCallbacks
     def test_duplicate_update(self):
