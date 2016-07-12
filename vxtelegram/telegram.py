@@ -168,7 +168,9 @@ class TelegramTransport(HttpRpcTransport):
             message_id=message_id,
             content=message['content'],
             to_addr=message['to_addr'],
+            to_addr_type='telegram_username',
             from_addr=message['from_addr'],
+            from_addr_type='telegram_id',
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             transport_metadata={
@@ -200,7 +202,9 @@ class TelegramTransport(HttpRpcTransport):
             message_id=message_id,
             content=inline_query['query'],
             to_addr=self.bot_username,
+            to_addr_type='telegram_username',
             from_addr=inline_query['from']['id'],
+            from_addr_type='telegram_id',
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             helper_metadata={
