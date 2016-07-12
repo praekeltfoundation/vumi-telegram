@@ -303,10 +303,24 @@ class TelegramTransport(HttpRpcTransport):
         http_client = HTTPClient(self.agent_factory())
 
         inline_query_id = message['transport_metadata']['details']['query_id']
-        outbound_query_answer = {
-            'inline_query_id': inline_query_id,
-            'results': message['helper_metadata']['telegram']['results'],
-        }
+
+        try:
+            outbound_query_answer = {
+                'inline_query_id': inline_query_id,
+                'results': message['helper_metadata']['telegram']['results'],
+            }
+
+        # Don't break if outbound messages are not in the correct format
+        # because the application side is not Telegram-specific - we don't
+        # publish a down status, because this says nothing about the health
+        # of the transport
+        except KeyError:
+            self.log.info('Query reply not sent: results field not present')
+            self.publish_nack(
+                message_id,
+                'Query reply not sent: results field not present',
+            )
+            return
 
         r = yield http_client.post(
             url=url,

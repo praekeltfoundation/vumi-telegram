@@ -513,6 +513,35 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
+    def test_outbound_query_reply_unexpected_format(self):
+        """
+        We should log and publish a nack when a query reply does not contain a
+        results field (probably because the application is not set up
+        for Telegram specifically). We don't publish a down status, since this
+        event has no bearing on the transport's health.
+        """
+        yield self.get_transport()
+        msg = self.helper.make_outbound(
+            content=None,
+            to_addr=self.default_user['id'],
+            from_addr=self.bot_username,
+            transport_metadata={
+                'type': 'inline_query',
+                'details': {'query_id': 'valid_id'},
+            },
+            helper_metadata={'telegram': {}},
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        with LogCatcher(message='results') as lc:
+            yield d
+            [log] = lc.messages()
+            self.assertEqual(log,
+                             'Query reply not sent: results field not present')
+            self.assert_nack(msg['message_id'],
+                             'Query reply not sent: results field not present')
+
+    @inlineCallbacks
     def test_outbound_query_reply_with_errors(self):
         """
         We should publish a nack and a 'down' status when we receive an error
@@ -525,15 +554,10 @@ class TestTelegramTransport(VumiTestCase):
             from_addr=self.bot_username,
             transport_metadata={
                 'type': 'inline_query',
-                'details': {
-                    'query_id': 'invalid_id',
-                },
+                'details': {'query_id': 'invalid_id'},
             },
             helper_metadata={
-                'telegram': {
-                    'type': 'inline_query_reply',
-                    'results': [],
-                },
+                'telegram': {'type': 'inline_query_reply', 'results': []},
             },
         )
         d = self.helper.dispatch_outbound(msg)
