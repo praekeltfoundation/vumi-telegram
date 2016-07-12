@@ -26,7 +26,7 @@ class TestTelegramTransport(VumiTestCase):
 
     # Some default Telegram objects
     default_user = {
-        'id': 'default_user_id',
+        'id': 2468,
         'username': '@default_user',
     }
     bad_telegram_response = {
@@ -77,13 +77,13 @@ class TestTelegramTransport(VumiTestCase):
     @inlineCallbacks
     def test_starting_status(self):
         """
-        Our transport should publish a 'down' status while setting up
+        Our transport should publish a 'down' status while setting up.
         """
         yield self.get_transport(publish_status=True)
 
         # Ignore status published during webhook setup
         [status, _] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_setup',
             'type': 'starting',
@@ -94,7 +94,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_get_outbound_url(self):
         """
         Our helper method for building outbound URLs should build URLs using
-        the Telegram API URL, our bot token, and the applicable method (path)
+        the Telegram API URL, our bot token, and the applicable method (path).
         """
         transport = yield self.get_transport()
         test_url = transport.get_outbound_url('myPath')
@@ -128,7 +128,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'ok',
             'component': 'telegram_webhook',
             'type': 'webhook_setup_success',
@@ -140,13 +140,13 @@ class TestTelegramTransport(VumiTestCase):
     def test_setup_webhook_with_errors(self):
         """
         We should log error messages received during webhook setup and publish
-        a 'down' status
+        a 'down' status.
         """
         error = self.bad_telegram_response['description']
         transport = yield self.get_transport(publish_status=True)
         d = transport.setup_webhook()
-        req = yield self.get_next_request()
 
+        req = yield self.get_next_request()
         req.setResponseCode(http.BAD_REQUEST)
         req.write(json.dumps(self.bad_telegram_response))
         with LogCatcher(message='Webhook') as lc:
@@ -160,7 +160,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_webhook',
             'type': 'bad_response',
@@ -169,10 +169,10 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
-    def test_setup_webhook_with_invalid_token(self):
+    def test_setup_webhook_with_redirect(self):
         """
         We should log cases where our request to set up a webhook is redirected
-        due to our bot token being invalid and publish a 'down' status
+        and publish a 'down' status.
         """
         transport = yield self.get_transport(publish_status=True)
         d = transport.setup_webhook()
@@ -192,7 +192,7 @@ class TestTelegramTransport(VumiTestCase):
         # Ignore statuses published on transport startup (only one, since
         # during tests this status is already published and doesn't repeat)
         [_, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_webhook',
             'type': 'request_redirected',
@@ -204,14 +204,14 @@ class TestTelegramTransport(VumiTestCase):
     def test_setup_webhook_with_unexpected_response(self):
         """
         We should log cases where our request to set up a webhook receives a
-        response that isn't JSON and publish a 'down' status
+        response that isn't JSON and publish a 'down' status.
         """
         transport = yield self.get_transport(publish_status=True)
         d = transport.setup_webhook()
         req = yield self.get_next_request()
 
         req.setResponseCode(http.INTERNAL_SERVER_ERROR)
-        req.write("Wait, this isn't JSON...")
+        req.write("This isn't JSON!")
         with LogCatcher(message='Webhook') as lc:
             req.finish()
             yield d
@@ -223,21 +223,20 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_webhook',
             'type': 'unexpected_response_format',
             'message': 'Webhook setup failed: unexpected response format',
         })
         self.assertEqual(status['details']['res_code'], 500)
-        self.assertEqual(status['details']['res_body'],
-                         "Wait, this isn't JSON...")
+        self.assertEqual(status['details']['res_body'], "This isn't JSON!")
 
     @inlineCallbacks
     def test_translate_inbound_message_from_channel(self):
         """
         When translating a message from a channel into Vumi's preferred format,
-        we should use the channel's chat id as from_addr
+        we should use the channel's chat id as from_addr.
         """
         transport = yield self.get_transport()
         default_channel = {
@@ -251,15 +250,17 @@ class TestTelegramTransport(VumiTestCase):
         }
 
         message = transport.translate_inbound_message(inbound_msg)
-        self.assertEqual(inbound_msg['text'], message['content'])
-        self.assertEqual(self.bot_username, message['to_addr'])
-        self.assertEqual(default_channel['id'], message['from_addr'])
-        self.assertEqual(inbound_msg['message_id'], message['telegram_id'])
+        self.assert_dict(message, {
+            'content': inbound_msg['text'],
+            'to_addr': self.bot_username,
+            'from_addr': default_channel['id'],
+            'telegram_id': inbound_msg['message_id'],
+        })
 
     @inlineCallbacks
     def test_translate_inbound_message_from_user(self):
         """
-        We should translate a Telegram message object into a Vumi message
+        We should translate a Telegram message object into a Vumi message.
         """
         transport = yield self.get_transport()
         inbound_msg = {
@@ -270,16 +271,18 @@ class TestTelegramTransport(VumiTestCase):
         }
 
         message = transport.translate_inbound_message(inbound_msg)
-        self.assertEqual(inbound_msg['text'], message['content'])
-        self.assertEqual(self.bot_username, message['to_addr'])
-        self.assertEqual(self.default_user['id'], message['from_addr'])
-        self.assertEqual(inbound_msg['message_id'], message['telegram_id'])
+        self.assert_dict(message, {
+            'content': inbound_msg['text'],
+            'to_addr': self.bot_username,
+            'from_addr': self.default_user['id'],
+            'telegram_id': inbound_msg['message_id'],
+        })
 
     @inlineCallbacks
     def test_update_lifetime(self):
         """
         update_ids in Redis should expire after update_lifetime has elapsed,
-        meaning they should no longer be considered duplicates
+        meaning they should no longer be considered duplicates.
         """
         transport = yield self.get_transport(update_lifetime=10)
         yield transport.mark_as_seen(1234)
@@ -292,12 +295,10 @@ class TestTelegramTransport(VumiTestCase):
     @inlineCallbacks
     def test_duplicate_update(self):
         """
-        We should log receipt of duplicate updates and discard them
+        We should log receipt of duplicate updates and discard them.
         """
         yield self.get_transport()
-        update = {
-            'update_id': 1234,
-        }
+        update = {'update_id': 1234}
 
         # Make initial request
         d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
@@ -319,37 +320,34 @@ class TestTelegramTransport(VumiTestCase):
     def test_inbound_update(self):
         """
         We should be able to receive updates from Telegram and publish them
-        as Vumi messages, as well as log the receipt
+        as Vumi messages, as well as log the receipt / publish an 'ok' status.
         """
         transport = yield self.get_transport(publish_status=True)
+        expected_log = (
+            'TelegramTransport receiving inbound message from %s to %s' %
+            (self.default_user['id'], self.bot_username)
+        )
         update = {
             'update_id': 1234,
             'message': {
-                'message_id': 'msg_id',
+                'message_id': 5678,
                 'from': self.default_user,
-                'chat': {
-                    'id': 'chat_id',
-                    'type': self.PRIVATE
-                },
+                'chat': {'id': 'chat_id', 'type': self.PRIVATE},
                 'date': 1234,
                 'text': 'Incoming message from Telegram!',
-            }
+            },
         }
 
         d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
         with LogCatcher(message='TelegramTransport') as lc:
             res = yield d
             [log] = lc.messages()
-            self.assertEqual(
-                log,
-                'TelegramTransport receiving inbound message from %s to %s' %
-                (self.default_user['id'], self.bot_username)
-            )
+            self.assertEqual(log, expected_log)
         self.assertEqual(res.code, http.OK)
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'ok',
             'component': 'telegram_inbound',
             'type': 'good_inbound',
@@ -357,18 +355,24 @@ class TestTelegramTransport(VumiTestCase):
         })
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
-        self.assertEqual(msg['to_addr'], self.bot_username)
-        self.assertEqual(msg['from_addr'], self.default_user['id'])
-        self.assertEqual(msg['content'], update['message']['text'])
-        self.assertEqual(msg['transport_type'], transport.transport_type)
-        self.assertEqual(msg['transport_name'], transport.transport_name)
-        self.assertEqual(msg['transport_metadata']['telegram_id'], 'msg_id')
+        self.assert_dict(msg, {
+            'to_addr': self.bot_username,
+            'to_addr_type': 'telegram_username',
+            'from_addr': self.default_user['id'],
+            'from_addr_type': 'telegram_id',
+            'content': update['message']['text'],
+            'transport_type': transport.transport_type,
+            'transport_name': transport.transport_name,
+            'transport_metadata': {
+                'telegram_id': update['message']['message_id'],
+            },
+        })
 
     @inlineCallbacks
     def test_inbound_inline_query(self):
         """
         We should be able to receive inline queries from Telegram and publish
-        them as Vumi messages, as well as log the receipt and update status
+        them as Vumi messages, as well as log the receipt and update status.
         """
         transport = yield self.get_transport(publish_status=True)
         expected_log = (
@@ -380,11 +384,11 @@ class TestTelegramTransport(VumiTestCase):
             'inline_query': {
                 'id': "1234",
                 'from': self.default_user,
-                'query': 'Do something, bot!'
-            }
+                'query': 'Do something, bot!',
+            },
         }
-        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
 
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
         with LogCatcher(message='inline') as lc:
             res = yield d
             [log] = lc.messages()
@@ -393,7 +397,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'ok',
             'component': 'telegram_inbound',
             'type': 'good_inbound',
@@ -401,34 +405,36 @@ class TestTelegramTransport(VumiTestCase):
         })
 
         [msg] = yield self.helper.wait_for_dispatched_inbound(1)
-        self.assertEqual(msg['content'], update['inline_query']['query'])
-        self.assertEqual(msg['to_addr'], self.bot_username)
-        self.assertEqual(msg['from_addr'], self.default_user['id'])
-        self.assertEqual(msg['transport_type'], transport.transport_type)
-        self.assertEqual(msg['transport_name'], transport.transport_name)
-        self.assertEqual(msg['helper_metadata'], {
-            'telegram': {
+        self.assert_dict(msg, {
+            'content': update['inline_query']['query'],
+            'to_addr': self.bot_username,
+            'to_addr_type': 'telegram_username',
+            'from_addr': self.default_user['id'],
+            'from_addr_type': 'telegram_id',
+            'transport_type': transport.transport_type,
+            'transport_name': transport.transport_name,
+            'helper_metadata': {'telegram': {
                 'type': 'inline_query',
-                'details': {'inline_query_id': update['inline_query']['id']}
-            }
-        })
-        self.assertEqual(msg['transport_metadata'], {
-            'type': 'inline_query',
-            'details': {'query_id': update['inline_query']['id']}
+                'details': {'inline_query_id': update['inline_query']['id']},
+            }},
+            'transport_metadata': {
+                'type': 'inline_query',
+                'details': {'query_id': update['inline_query']['id']},
+            },
         })
 
     @inlineCallbacks
     def test_inbound_non_message_update(self):
         """
-        We should log receipt of non-message updates and discard them
+        We should log receipt of non-message updates and discard them.
         """
         yield self.get_transport()
         update = json.dumps({
             'update_id': 1234,
             'object': 'This is not a message...',
         })
-        d = self.helper.mk_request(_method='POST', _data=update)
 
+        d = self.helper.mk_request(_method='POST', _data=update)
         with LogCatcher(message='message') as lc:
             res = yield d
             [log] = lc.messages()
@@ -438,18 +444,18 @@ class TestTelegramTransport(VumiTestCase):
     @inlineCallbacks
     def test_inbound_non_text_message(self):
         """
-        We should log receipt of non-text messages and discard them
+        We should log receipt of non-text messages and discard them.
         """
         yield self.get_transport()
         update = json.dumps({
             'update_id': 1234,
             'message': {
-                'message_id': 'msg_id',
+                'message_id': 5678,
                 'object': 'This is not a text message...'
-            }
+            },
         })
-        d = self.helper.mk_request(_method='POST', _data=update)
 
+        d = self.helper.mk_request(_method='POST', _data=update)
         with LogCatcher(message='text') as lc:
             res = yield d
             [log] = lc.messages()
@@ -460,7 +466,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_inbound_update_unexpected_format(self):
         """
         We should log a warning and publish a down status when we receive
-        updates that aren't in JSON format
+        updates that aren't in JSON format.
         """
         yield self.get_transport(publish_status=True)
 
@@ -473,7 +479,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_inbound',
             'type': 'unexpected_update_format',
@@ -485,7 +491,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_query_reply_no_errors(self):
         """
         We should be able to reply to inline queries using POST requests, and
-        publish an ack and an 'ok' status when we receive a positive response
+        publish an ack and an 'ok' status when we receive a positive response.
         """
         yield self.get_transport(publish_status=True)
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
@@ -504,15 +510,10 @@ class TestTelegramTransport(VumiTestCase):
             from_addr=self.bot_username,
             transport_metadata={
                 'type': 'inline_query',
-                'details': {
-                    'query_id': '1234',
-                },
+                'details': {'query_id': '1234'},
             },
             helper_metadata={
-                'telegram': {
-                    'type': 'inline_query_reply',
-                    'results': results,
-                },
+                'telegram': {'type': 'inline_query_reply', 'results': results},
             },
         )
         d = self.helper.dispatch_outbound(msg)
@@ -525,7 +526,6 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(outbound_msg['inline_query_id'], '1234')
         self.assertEqual(outbound_msg['results'], results)
 
-        # TODO: check that this is actually the response we would get
         req.write(json.dumps({'ok': True}))
         req.finish()
         yield d
@@ -534,7 +534,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'ok',
             'component': 'telegram_outbound',
             'type': 'good_outbound_request',
@@ -542,10 +542,37 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
+    def test_outbound_query_reply_unexpected_format(self):
+        """
+        We should log and publish a nack when a query reply does not contain a
+        results field. We don't publish a down status, since this
+        event has no bearing on the transport's health.
+        """
+        yield self.get_transport()
+        expected_log = 'Query reply not sent: results field not present'
+        msg = self.helper.make_outbound(
+            content=None,
+            to_addr=self.default_user['id'],
+            from_addr=self.bot_username,
+            transport_metadata={
+                'type': 'inline_query',
+                'details': {'query_id': 'valid_id'},
+            },
+            helper_metadata={'telegram': {}},
+        )
+
+        d = self.helper.dispatch_outbound(msg)
+        with LogCatcher(message='results') as lc:
+            yield d
+            [log] = lc.messages()
+            self.assertEqual(log, expected_log)
+            self.assert_nack(msg['message_id'], expected_log)
+
+    @inlineCallbacks
     def test_outbound_query_reply_with_errors(self):
         """
         We should publish a nack and a 'down' status when we receive an error
-        response from Telegram while trying to reply to an inline query
+        response from Telegram while trying to reply to an inline query.
         """
         yield self.get_transport(publish_status=True)
         msg = self.helper.make_outbound(
@@ -554,15 +581,10 @@ class TestTelegramTransport(VumiTestCase):
             from_addr=self.bot_username,
             transport_metadata={
                 'type': 'inline_query',
-                'details': {
-                    'query_id': 'invalid_id',
-                },
+                'details': {'query_id': 'invalid_id'},
             },
             helper_metadata={
-                'telegram': {
-                    'type': 'inline_query_reply',
-                    'results': [],
-                },
+                'telegram': {'type': 'inline_query_reply', 'results': []},
             },
         )
         d = self.helper.dispatch_outbound(msg)
@@ -580,7 +602,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_outbound',
             'type': 'bad_response',
@@ -596,7 +618,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_message_no_errors(self):
         """
         We should be able to send a message to Telegram as a POST request, and
-        publish an ack and an 'ok' status when we receive a positive response
+        publish an ack and an 'ok' status when we receive a positive response.
         """
         yield self.get_transport(publish_status=True)
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
@@ -613,8 +635,10 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(req.path, expected_url)
 
         outbound_msg = json.load(req.content)
-        self.assertEqual(outbound_msg['text'], msg['content'])
-        self.assertEqual(outbound_msg['chat_id'], msg['to_addr'])
+        self.assert_dict(outbound_msg, {
+            'text': msg['content'],
+            'chat_id': msg['to_addr'],
+        })
 
         req.write(json.dumps({'ok': True}))
         req.finish()
@@ -624,7 +648,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'ok',
             'component': 'telegram_outbound',
             'type': 'good_outbound_request',
@@ -636,12 +660,11 @@ class TestTelegramTransport(VumiTestCase):
         """
         We should be able to reply to messages using the original message's
         Telegram message_id (we don't assert statuses here, since we
-        already do that in test_outbound_message_no_errors)
+        already test that in test_outbound_message_no_errors).
         """
         yield self.get_transport()
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'sendMessage')
-
         msg = self.helper.make_outbound(
             content='Outbound reply!',
             to_addr=self.default_user['id'],
@@ -656,9 +679,11 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(req.path, expected_url)
 
         outbound_msg = json.load(req.content)
-        self.assertEqual(outbound_msg['text'], msg['content'])
-        self.assertEqual(outbound_msg['chat_id'], msg['to_addr'])
-        self.assertEqual(outbound_msg['reply_to_message'], 1234)
+        self.assert_dict(outbound_msg, {
+            'text': msg['content'],
+            'chat_id': msg['to_addr'],
+            'reply_to_message': msg['transport_metadata']['telegram_id']
+        })
 
         req.write(json.dumps({'ok': True}))
         req.finish()
@@ -670,7 +695,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_message_with_errors(self):
         """
         We should publish a nack and a 'down' status when we get an error
-        response from Telegram while trying to send a message
+        response from Telegram while trying to send a message.
         """
         yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
@@ -690,7 +715,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_outbound',
             'type': 'bad_response',
@@ -705,7 +730,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_message_with_unexpected_response(self):
         """
         We should publish a nack and a 'down' status when our request to
-        Telegram gets a response that isn't JSON
+        Telegram gets a response that isn't JSON.
         """
         yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
@@ -716,7 +741,7 @@ class TestTelegramTransport(VumiTestCase):
 
         req = yield self.get_next_request()
         req.setResponseCode(http.INTERNAL_SERVER_ERROR)
-        req.write("Wait, this isn't JSON...")
+        req.write("This isn't JSON!")
         req.finish()
         yield d
 
@@ -725,21 +750,20 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_outbound',
             'type': 'unexpected_response_format',
             'message': 'Message not sent: unexpected response format',
         })
         self.assertEqual(status['details']['res_code'], 500)
-        self.assertEqual(status['details']['res_body'],
-                         "Wait, this isn't JSON...")
+        self.assertEqual(status['details']['res_body'], "This isn't JSON!")
 
     @inlineCallbacks
-    def test_outbound_message_with_invalid_token(self):
+    def test_outbound_message_with_redirect(self):
         """
         We should publish a nack and a 'down' status when our request to
-        Telegram is redirected due to our bot token being invalid
+        Telegram is redirected.
         """
         yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
@@ -759,7 +783,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_outbound',
             'type': 'request_redirected',
@@ -771,7 +795,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_failure(self):
         """
         outbound_failure is a helper method for our transport that should both
-        publish a 'down' status and a nack with the correct reason
+        publish a 'down' status and a nack with the correct reason.
         """
         transport = yield self.get_transport(publish_status=True)
         error = self.bad_telegram_response['description']
@@ -784,7 +808,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_outbound',
             'type': 'test',
@@ -796,7 +820,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_success(self):
         """
         outbound_success is a helper method for our transport that should both
-        publish an 'ok' status and an ack
+        publish an 'ok' status and an ack.
         """
         transport = yield self.get_transport(publish_status=True)
         yield transport.outbound_success(message_id='id')
@@ -804,24 +828,24 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_status(status, {
+        self.assert_dict(status, {
             'status': 'ok',
             'component': 'telegram_outbound',
             'type': 'good_outbound_request',
-            'message': 'Outbound request successful'
+            'message': 'Outbound request successful',
         })
 
-    def assert_status(self, status, expected_fields):
+    def assert_dict(self, dictionary, expected_fields):
         """
-        Helper method for asserting that statuses are published correctly
+        Helper method for asserting that a dict contains the expected fields.
         """
         for key in expected_fields.keys():
-            self.assertEqual(status[key], expected_fields[key])
+            self.assertEqual(dictionary[key], expected_fields[key])
 
     @inlineCallbacks
     def assert_nack(self, message_id, reason):
         """
-        Helper method for asserting that nacks are published correctly
+        Helper method for asserting that nacks are published correctly.
         """
         [nack] = yield self.helper.wait_for_dispatched_events(1)
         self.assertEqual(nack['event_type'], 'nack')
@@ -831,7 +855,7 @@ class TestTelegramTransport(VumiTestCase):
     @inlineCallbacks
     def assert_ack(self, message_id):
         """
-        Helper method for asserting that acks are published correctly
+        Helper method for asserting that acks are published correctly.
         """
         [ack] = yield self.helper.wait_for_dispatched_events(1)
         self.assertEqual(ack['event_type'], 'ack')
