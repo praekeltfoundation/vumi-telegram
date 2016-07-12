@@ -18,12 +18,11 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
     )
     bot_token = ConfigText(
         "Our bot's unique token to access the Telegram API",
-        static=True,
-        required=True,
+        static=True, required=True,
     )
     outbound_url = ConfigUrl(
         'The URL our bot should make requests to', static=True,
-        default='https://api.telegram.org/bot',
+        default='https://api.telegram.org/bot', required=False,
     )
     inbound_url = ConfigUrl(
         'The URL our transport will listen on for Telegram updates',
@@ -34,9 +33,8 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         required=False,
     )
     update_lifetime = ConfigInt(
-        'Time to store updates for to ensure we are not receiving dupllicates',
-        # Defaults to 24 hours, since that is how long Telegram stores updates
-        # on their servers
+        'How long we store update_ids in Redis (in seconds)',
+        # Default: 24 hours (how long Telegram stores updates on their servers)
         default=(60 * 60 * 24), static=True, required=False,
     )
 
