@@ -41,7 +41,8 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
 
 class TelegramTransport(HttpRpcTransport):
     """
-    Telegram transport for Vumi
+    Telegram transport for Vumi and Junebug.
+    See the Telegram Bot API at https://core.telegram.org/bots/api.
     """
     transport_type = 'telegram'
     transport_name = 'telegram_transport'
@@ -51,7 +52,7 @@ class TelegramTransport(HttpRpcTransport):
     @classmethod
     def agent_factory(cls):
         """
-        For swapping out the Agent for use in tests
+        For swapping out the Agent we use in tests.
         """
         return Agent(reactor)
 
@@ -71,8 +72,12 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def setup_webhook(self):
+        """
+        Sets up a webhook to receive updates from Telegram.
+        """
         # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
-        #       webhook setup, and sends requests over HTTPS only
+        #       webhook setup, and sends requests over HTTPS only. This means
+        #       that a proxy (eg. ngrok, nginx) is needed to run the transport.
         url = self.get_outbound_url('setWebhook')
         http_client = HTTPClient(self.agent_factory())
 
@@ -101,9 +106,7 @@ class TelegramTransport(HttpRpcTransport):
             component='telegram_webhook',
             type='webhook_setup_success',
             message='Webhook setup successful',
-            details={
-                'webhook_url': self.inbound_url,
-            },
+            details={'webhook_url': self.inbound_url},
         )
 
     def add_status_bad_webhook(self, status_type, message, details):
@@ -128,10 +131,7 @@ class TelegramTransport(HttpRpcTransport):
             yield self.add_status_bad_inbound(
                 status_type='unexpected_update_format',
                 message='Inbound update in unexpected format',
-                details={
-                    'error': e.message,
-                    'req_content': content,
-                },
+                details={'error': e.message, 'req_content': content},
             )
             request.setResponseCode(http.BAD_REQUEST)
             request.finish()
@@ -144,10 +144,9 @@ class TelegramTransport(HttpRpcTransport):
             self.log.info('Received a duplicate update: %s' % update_id)
             request.finish()
             return
-        else:
-            yield self.mark_as_seen(update_id)
+        yield self.mark_as_seen(update_id)
 
-        # Handle inline queries separately to text messages
+        # Handle inline queries separately
         if 'inline_query' in update:
             yield self.handle_inbound_inline_query(
                 message_id=message_id,
@@ -169,13 +168,6 @@ class TelegramTransport(HttpRpcTransport):
             request.finish()
             return
 
-        yield self.add_status(
-            status='ok',
-            component='telegram_inbound',
-            type='good_inbound',
-            message='Good inbound request',
-        )
-
         message = self.translate_inbound_message(update['message'])
         self.log.info(
             'TelegramTransport receiving inbound message from %s to %s' % (
@@ -190,9 +182,14 @@ class TelegramTransport(HttpRpcTransport):
             from_addr_type='telegram_id',
             transport_type=self.transport_type,
             transport_name=self.transport_name,
-            transport_metadata={
-                'telegram_id': message['telegram_id'],
-            }
+            transport_metadata={'telegram_id': message['telegram_id']},
+        )
+
+        yield self.add_status(
+            status='ok',
+            component='telegram_inbound',
+            type='good_inbound',
+            message='Good inbound request',
         )
         request.finish()
 
@@ -202,7 +199,7 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def is_duplicate(self, update_id):
         """
-        Checks to see if an incoming update has already been processed
+        Checks to see if an inbound update has already been processed.
         """
         exists = yield self.redis.exists(self.get_update_id_key(update_id))
         returnValue(exists)
@@ -210,7 +207,7 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def mark_as_seen(self, update_id):
         """
-        Adds an update_id to a list of update_ids already processed
+        Adds an update_id to a list of update_ids already processed.
         """
         config = self.get_static_config()
         key = self.get_update_id_key(update_id)
@@ -227,9 +224,11 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_inbound_inline_query(self, message_id, inline_query):
+        """
+        Handles an inbound inline query from a Telegram user.
+        """
         # NOTE: Telegram supports multiple ways to answer inline queries with
-        #       rich content (articles, multimedia etc.) as opposed to simple
-        #       text messages.
+        #       rich content (articles, multimedia etc.)
         #       see: https://core.telegram.org/bots/api#answerinlinequery
         self.log.info(
             'TelegramTransport receiving inline query from %s to %s' % (
@@ -247,16 +246,12 @@ class TelegramTransport(HttpRpcTransport):
             helper_metadata={
                 'telegram': {
                     'type': 'inline_query',
-                    'details': {
-                        'inline_query_id': inline_query['id']
-                    }
+                    'details': {'inline_query_id': inline_query['id']}
                 }
             },
             transport_metadata={
                 'type': 'inline_query',
-                'details': {
-                    'query_id': inline_query['id'],
-                },
+                'details': {'query_id': inline_query['id']},
             },
         )
 
@@ -269,7 +264,7 @@ class TelegramTransport(HttpRpcTransport):
 
     def translate_inbound_message(self, message):
         """
-        Translates inbound Telegram message into Vumi's preferred format
+        Translates inbound Telegram message into Vumi's default format.
         """
         telegram_id = message['message_id']
         content = message['text']
@@ -293,7 +288,7 @@ class TelegramTransport(HttpRpcTransport):
     def handle_outbound_message(self, message):
         message_id = message['message_id']
 
-        # Handle replies to inline queries separately from text messages
+        # Handle replies to inline queries separately
         if message['transport_metadata'].get('type') == 'inline_query':
             yield self.handle_outbound_inline_query(message_id, message)
             return
@@ -322,7 +317,6 @@ class TelegramTransport(HttpRpcTransport):
         if validate['success']:
             yield self.outbound_success(message_id)
         else:
-            # TODO: add a test for this eventuality
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Message not sent: %s' % validate['message'],
@@ -334,7 +328,7 @@ class TelegramTransport(HttpRpcTransport):
     def handle_outbound_inline_query(self, message_id, message):
         """
         Handles replies to inline queries. We rely on the application worker to
-        generate the result(s) and we trust that they're in the correct format.
+        generate the result(s).
         """
         url = self.get_outbound_url('answerInlineQuery')
         http_client = HTTPClient(self.agent_factory())
@@ -348,9 +342,6 @@ class TelegramTransport(HttpRpcTransport):
             }
 
         # Don't break if outbound messages are not in the correct format
-        # because the application side is not Telegram-specific - we don't
-        # publish a down status, because this says nothing about the health
-        # of the transport
         except KeyError:
             self.log.info('Query reply not sent: results field not present')
             self.publish_nack(
@@ -384,6 +375,8 @@ class TelegramTransport(HttpRpcTransport):
         Checks whether a request to Telegram's API was successful, and returns
         relevant information for publishing nacks / statuses if not.
         """
+        # If our request is redirected, it likely means our bot token is in
+        # an invalid format
         if response.code == http.FOUND:
             returnValue({
                 'success': False,
@@ -391,7 +384,7 @@ class TelegramTransport(HttpRpcTransport):
                 'status': 'request_redirected',
                 'details': {
                     'error': 'Unexpected redirect',
-                    'res_code': http.FOUND
+                    'res_code': http.FOUND,
                 },
             })
 
