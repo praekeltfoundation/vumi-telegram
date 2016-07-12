@@ -8,14 +8,13 @@ from twisted.web import http
 from twisted.web.client import Agent
 
 from vumi.transports.httprpc.httprpc import HttpRpcTransport
-from vumi.config import ConfigText, ConfigUrl
+from vumi.persist.txredis_manager import TxRedisManager
+from vumi.config import ConfigText, ConfigUrl, ConfigDict, ConfigInt
 
 
 class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
     bot_username = ConfigText(
-        'The username of our Telegram bot',
-        static=True,
-        required=True,
+        'The username of our Telegram bot', static=True, required=True,
     )
     bot_token = ConfigText(
         "Our bot's unique token to access the Telegram API",
@@ -23,12 +22,22 @@ class TelegramTransportConfig(HttpRpcTransport.CONFIG_CLASS):
         required=True,
     )
     outbound_url = ConfigUrl(
-        'The URL our bot should make requests to',
-        default='https://api.telegram.org/bot', static=True,
+        'The URL our bot should make requests to', static=True,
+        default='https://api.telegram.org/bot',
     )
     inbound_url = ConfigUrl(
         'The URL our transport will listen on for Telegram updates',
         static=True, required=True,
+    )
+    redis_manager = ConfigDict(
+        'Parameters to connect to Redis with', default={}, static=True,
+        required=False,
+    )
+    update_lifetime = ConfigInt(
+        'Time to store updates for to ensure we are not receiving dupllicates',
+        # Defaults to 24 hours, since that is how long Telegram stores updates
+        # on their servers
+        default=(60 * 60 * 24), static=True, required=False,
     )
 
 
@@ -58,6 +67,7 @@ class TelegramTransport(HttpRpcTransport):
                                  config.bot_token)
         self.inbound_url = config.inbound_url.geturl()
         self.bot_username = config.bot_username
+        self.redis = yield TxRedisManager.from_config(config.redis_manager)
 
         yield self.setup_webhook()
 
@@ -112,7 +122,6 @@ class TelegramTransport(HttpRpcTransport):
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
-        # TODO: ensure we are not receiving duplicate updates
         content = yield request.content.read()
         try:
             update = json.loads(content)
@@ -129,6 +138,16 @@ class TelegramTransport(HttpRpcTransport):
             request.setResponseCode(http.BAD_REQUEST)
             request.finish()
             return
+
+        # Do not process duplicate requests
+        update_id = update['update_id']
+        is_duplicate = yield self.is_duplicate(update_id)
+        if is_duplicate:
+            self.log.info('Received a duplicate update: %s' % update_id)
+            request.finish()
+            return
+        else:
+            yield self.mark_as_seen(update_id)
 
         # Handle inline queries separately to text messages
         if 'inline_query' in update:
@@ -176,6 +195,26 @@ class TelegramTransport(HttpRpcTransport):
             }
         )
         request.finish()
+
+    def get_update_id_key(self, update_id):
+        return 'update_id:%s' % update_id
+
+    @inlineCallbacks
+    def is_duplicate(self, update_id):
+        """
+        Checks to see if an incoming update has already been processed
+        """
+        exists = yield self.redis.exists(self.get_update_id_key(update_id))
+        returnValue(exists)
+
+    @inlineCallbacks
+    def mark_as_seen(self, update_id):
+        """
+        Adds an update_id to a list of update_ids already processed
+        """
+        config = self.get_static_config()
+        key = self.get_update_id_key(update_id)
+        yield self.redis.setex(key, 1, config.update_lifetime)
 
     def add_status_bad_inbound(self, status_type, message, details):
         return self.add_status(
