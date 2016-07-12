@@ -280,6 +280,46 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
+    def test_update_lifetime(self):
+        """
+        update_ids in Redis should expire after update_lifetime has elapsed,
+        meaning they should no longer be considered duplicates
+        """
+        transport = yield self.get_transport(update_lifetime=10)
+        yield transport.mark_as_seen(1234)
+
+        duplicate = yield transport.is_duplicate(1234)
+        self.assertTrue(duplicate)
+        ttl = yield transport.redis.ttl(1234)
+        self.assertTrue(ttl <= 10)
+
+    @inlineCallbacks
+    def test_duplicate_update(self):
+        """
+        We should log receipt of duplicate updates and discard them
+        """
+        yield self.get_transport()
+        update = {
+            'update_id': 1234,
+        }
+
+        # Make initial request
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
+        with LogCatcher(message='message') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Inbound update does not contain a message')
+        self.assertEqual(res.code, http.OK)
+
+        # Make duplicate request
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
+        with LogCatcher(message='duplicate') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, 'Received a duplicate update: 1234')
+        self.assertEqual(res.code, http.OK)
+
+    @inlineCallbacks
     def test_inbound_update(self):
         """
         We should be able to receive updates from Telegram and publish them
@@ -287,7 +327,7 @@ class TestTelegramTransport(VumiTestCase):
         """
         transport = yield self.get_transport(publish_status=True)
         update = {
-            'update_id': 'update_id',
+            'update_id': 1234,
             'message': {
                 'message_id': 'msg_id',
                 'from': self.default_user,
@@ -346,7 +386,7 @@ class TestTelegramTransport(VumiTestCase):
             (self.default_user['id'], self.bot_username)
         )
         update = {
-            'update_id': 'update_id',
+            'update_id': 1234,
             'inline_query': {
                 'id': "1234",
                 'from': self.default_user,
@@ -395,7 +435,7 @@ class TestTelegramTransport(VumiTestCase):
         """
         yield self.get_transport()
         update = json.dumps({
-            'update_id': 'update_id',
+            'update_id': 1234,
             'object': 'This is not a message...',
         })
         d = self.helper.mk_request(_method='POST', _data=update)
@@ -413,7 +453,7 @@ class TestTelegramTransport(VumiTestCase):
         """
         yield self.get_transport()
         update = json.dumps({
-            'update_id': 'update_id',
+            'update_id': 1234,
             'message': {
                 'message_id': 'msg_id',
                 'object': 'This is not a text message...'
