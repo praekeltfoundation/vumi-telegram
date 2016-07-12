@@ -214,8 +214,7 @@ class TelegramTransport(HttpRpcTransport):
         """
         config = self.get_static_config()
         key = self.get_update_id_key(update_id)
-        yield self.redis.set(key, 1)
-        yield self.redis.expire(key, config.update_lifetime)
+        yield self.redis.setex(key, 1, config.update_lifetime)
 
     def add_status_bad_inbound(self, status_type, message, details):
         return self.add_status(
