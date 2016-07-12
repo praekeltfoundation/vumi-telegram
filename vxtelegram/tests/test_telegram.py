@@ -763,7 +763,7 @@ class TestTelegramTransport(VumiTestCase):
     def test_outbound_message_with_redirect(self):
         """
         We should publish a nack and a 'down' status when our request to
-        Telegram is redirected
+        Telegram is redirected.
         """
         yield self.get_transport(publish_status=True)
         msg = yield self.helper.make_outbound(
