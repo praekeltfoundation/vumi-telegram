@@ -533,11 +533,17 @@ class TestTelegramTransport(VumiTestCase):
         self.assert_ack(msg['message_id'])
 
         # Ignore statuses published on transport startup
-        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_dict(status, {
+        [_, __, out, query] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(out, {
             'status': 'ok',
             'component': 'telegram_outbound',
             'type': 'good_outbound_request',
+            'message': 'Outbound request successful',
+        })
+        self.assert_dict(query, {
+            'status': 'ok',
+            'component': 'telegram_query_reply',
+            'type': 'good_query_reply',
             'message': 'Outbound request successful',
         })
 

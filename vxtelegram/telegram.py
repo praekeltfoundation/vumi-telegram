@@ -374,6 +374,12 @@ class TelegramTransport(HttpRpcTransport):
         validate = yield self.validate_outbound(r)
         if validate['success']:
             yield self.outbound_success(message_id)
+            self.add_status(
+                status='ok',
+                component='telegram_query_reply',
+                type='good_query_reply',
+                message='Outbound request successful',
+            )
         else:
             validate['details'].update({'inline_query_id': inline_query_id})
             yield self.outbound_failure(
