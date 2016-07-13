@@ -348,6 +348,20 @@ class TelegramTransport(HttpRpcTransport):
                 message_id,
                 'Query reply not sent: results field not present',
             )
+            self.add_status(
+                status='down',
+                component='telegram_query_reply',
+                type='bad_query_reply',
+                message='Query reply not sent: results field not present',
+                details={
+                    'error': "Transport received an outbound query reply that "
+                             "did not contain any results. Check that your "
+                             "application is configured to reply to inline "
+                             "queries. If you're not supporting inline "
+                             "queries, you should disable your bot's inline "
+                             "mode.",
+                },
+            )
             return
 
         r = yield http_client.post(
@@ -360,6 +374,12 @@ class TelegramTransport(HttpRpcTransport):
         validate = yield self.validate_outbound(r)
         if validate['success']:
             yield self.outbound_success(message_id)
+            self.add_status(
+                status='ok',
+                component='telegram_query_reply',
+                type='good_query_reply',
+                message='Outbound request successful',
+            )
         else:
             validate['details'].update({'inline_query_id': inline_query_id})
             yield self.outbound_failure(

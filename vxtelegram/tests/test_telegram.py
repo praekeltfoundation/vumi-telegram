@@ -533,22 +533,27 @@ class TestTelegramTransport(VumiTestCase):
         self.assert_ack(msg['message_id'])
 
         # Ignore statuses published on transport startup
-        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
-        self.assert_dict(status, {
+        [_, __, out, query] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(out, {
             'status': 'ok',
             'component': 'telegram_outbound',
             'type': 'good_outbound_request',
+            'message': 'Outbound request successful',
+        })
+        self.assert_dict(query, {
+            'status': 'ok',
+            'component': 'telegram_query_reply',
+            'type': 'good_query_reply',
             'message': 'Outbound request successful',
         })
 
     @inlineCallbacks
     def test_outbound_query_reply_unexpected_format(self):
         """
-        We should log and publish a nack when a query reply does not contain a
-        results field. We don't publish a down status, since this
-        event has no bearing on the transport's health.
+        We should log and publish a nack / 'down' status when a query reply
+        does not contain a results field.
         """
-        yield self.get_transport()
+        yield self.get_transport(publish_status=True)
         expected_log = 'Query reply not sent: results field not present'
         msg = self.helper.make_outbound(
             content=None,
@@ -567,6 +572,20 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(log, expected_log)
             self.assert_nack(msg['message_id'], expected_log)
+
+        # Ignore statuses published on transport startup
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(status, {
+            'status': 'down',
+            'component': 'telegram_query_reply',
+            'type': 'bad_query_reply',
+            'message': 'Query reply not sent: results field not present',
+        })
+        # We assert this field separately as a substring because it is verbose
+        self.assertSubstring(
+            "you should disable your bot's inline mode",
+            status['details']['error']
+        )
 
     @inlineCallbacks
     def test_outbound_query_reply_with_errors(self):
