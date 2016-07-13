@@ -49,6 +49,11 @@ class TelegramTransport(HttpRpcTransport):
 
     CONFIG_CLASS = TelegramTransportConfig
 
+    # Telegram usernames are human-readable strings that identify users
+    TELEGRAM_USERNAME = 'telegram_username'
+    # Telegram ids are integers that identify users in the Telegram API
+    TELEGRAM_ID = 'telegram_id'
+
     @classmethod
     def agent_factory(cls):
         """
@@ -177,7 +182,7 @@ class TelegramTransport(HttpRpcTransport):
             message_id=message_id,
             content=message['content'],
             to_addr=message['to_addr'],
-            to_addr_type='telegram_username',
+            to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=message['from_addr'],
             from_addr_type=message['from_addr_type'],
             transport_type=self.transport_type,
@@ -241,9 +246,9 @@ class TelegramTransport(HttpRpcTransport):
             message_id=message_id,
             content=inline_query['query'],
             to_addr=self.bot_username,
-            to_addr_type='telegram_username',
+            to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=inline_query['from']['username'],
-            from_addr_type='telegram_username',
+            from_addr_type=self.TELEGRAM_USERNAME,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             helper_metadata={
@@ -279,11 +284,11 @@ class TelegramTransport(HttpRpcTransport):
         # case, we want the channel's chat id
         if 'from' in message:
             from_addr = message['from']['username']
-            from_addr_type = 'telegram_username'
+            from_addr_type = self.TELEGRAM_USERNAME
             telegram_user_id = message['from']['id']
         else:
             from_addr = message['chat']['id']
-            from_addr_type = 'telegram_id'
+            from_addr_type = self.TELEGRAM_ID
             telegram_user_id = from_addr
 
         return {
