@@ -49,6 +49,11 @@ class TelegramTransport(HttpRpcTransport):
 
     CONFIG_CLASS = TelegramTransportConfig
 
+    # Telegram usernames are human-readable strings that identify users
+    TELEGRAM_USERNAME = 'telegram_username'
+    # Telegram ids are integers that identify users in the Telegram API
+    TELEGRAM_ID = 'telegram_id'
+
     @classmethod
     def agent_factory(cls):
         """
@@ -177,12 +182,15 @@ class TelegramTransport(HttpRpcTransport):
             message_id=message_id,
             content=message['content'],
             to_addr=message['to_addr'],
-            to_addr_type='telegram_username',
+            to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=message['from_addr'],
-            from_addr_type='telegram_id',
+            from_addr_type=message['from_addr_type'],
             transport_type=self.transport_type,
             transport_name=self.transport_name,
-            transport_metadata={'telegram_id': message['telegram_id']},
+            transport_metadata={
+                'telegram_msg_id': message['telegram_msg_id'],
+                'telegram_user_id': message['telegram_user_id'],
+            },
         )
 
         yield self.add_status(
@@ -232,26 +240,27 @@ class TelegramTransport(HttpRpcTransport):
         #       see: https://core.telegram.org/bots/api#answerinlinequery
         self.log.info(
             'TelegramTransport receiving inline query from %s to %s' % (
-                inline_query['from']['id'], self.bot_username))
+                inline_query['from']['username'], self.bot_username))
 
         yield self.publish_message(
             message_id=message_id,
             content=inline_query['query'],
             to_addr=self.bot_username,
-            to_addr_type='telegram_username',
-            from_addr=inline_query['from']['id'],
-            from_addr_type='telegram_id',
+            to_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=inline_query['from']['username'],
+            from_addr_type=self.TELEGRAM_USERNAME,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             helper_metadata={
                 'telegram': {
                     'type': 'inline_query',
-                    'details': {'inline_query_id': inline_query['id']}
-                }
+                    'details': {'inline_query_id': inline_query['id']},
+                },
             },
             transport_metadata={
                 'type': 'inline_query',
-                'details': {'query_id': inline_query['id']},
+                'details': {'inline_query_id': inline_query['id']},
+                'telegram_user_id': inline_query['from']['id'],
             },
         )
 
@@ -264,24 +273,31 @@ class TelegramTransport(HttpRpcTransport):
 
     def translate_inbound_message(self, message):
         """
-        Translates inbound Telegram message into Vumi's default format.
+        Translates inbound Telegram message into Vumi's default format. We want
+        to use the user's username as from_addr if possible, for readability.
         """
-        telegram_id = message['message_id']
+        telegram_msg_id = message['message_id']
         content = message['text']
         to_addr = self.bot_username
 
         # Messages sent over channels do not contain a 'from' field - in that
         # case, we want the channel's chat id
         if 'from' in message:
-            from_addr = message['from']['id']
+            from_addr = message['from']['username']
+            from_addr_type = self.TELEGRAM_USERNAME
+            telegram_user_id = message['from']['id']
         else:
             from_addr = message['chat']['id']
+            from_addr_type = self.TELEGRAM_ID
+            telegram_user_id = from_addr
 
         return {
-            'telegram_id': telegram_id,
+            'telegram_msg_id': telegram_msg_id,
             'content': content,
             'to_addr': to_addr,
             'from_addr': from_addr,
+            'from_addr_type': from_addr_type,
+            'telegram_user_id': telegram_user_id,
         }
 
     @inlineCallbacks
@@ -294,13 +310,13 @@ class TelegramTransport(HttpRpcTransport):
             return
 
         outbound_msg = {
-            'chat_id': message['to_addr'],
+            'chat_id': message['transport_metadata']['telegram_user_id'],
             'text': message['content'],
         }
 
         # Handle direct replies
         if message['in_reply_to'] is not None:
-            reply_to_message = message['transport_metadata']['telegram_id']
+            reply_to_message = message['transport_metadata']['telegram_msg_id']
             outbound_msg.update({'reply_to_message': reply_to_message})
 
         url = self.get_outbound_url('sendMessage')
@@ -333,11 +349,11 @@ class TelegramTransport(HttpRpcTransport):
         url = self.get_outbound_url('answerInlineQuery')
         http_client = HTTPClient(self.agent_factory())
 
-        inline_query_id = message['transport_metadata']['details']['query_id']
+        query_id = message['transport_metadata']['details']['inline_query_id']
 
         try:
             outbound_query_answer = {
-                'inline_query_id': inline_query_id,
+                'inline_query_id': query_id,
                 'results': message['helper_metadata']['telegram']['results'],
             }
 
@@ -381,7 +397,7 @@ class TelegramTransport(HttpRpcTransport):
                 message='Outbound request successful',
             )
         else:
-            validate['details'].update({'inline_query_id': inline_query_id})
+            validate['details'].update({'inline_query_id': query_id})
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Query reply not sent: %s' % validate['message'],
