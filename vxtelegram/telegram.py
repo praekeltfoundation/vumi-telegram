@@ -249,13 +249,13 @@ class TelegramTransport(HttpRpcTransport):
             helper_metadata={
                 'telegram': {
                     'type': 'inline_query',
-                    'details': {'inline_query_id': inline_query['id']}
-                }
+                    'details': {'inline_query_id': inline_query['id']},
+                },
             },
             transport_metadata={
                 'type': 'inline_query',
                 'details': {'inline_query_id': inline_query['id']},
-                'telegram_user_id': inline_query['from']['id']
+                'telegram_user_id': inline_query['from']['id'],
             },
         )
 

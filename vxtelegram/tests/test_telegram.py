@@ -51,7 +51,7 @@ class TestTelegramTransport(VumiTestCase):
             'web_path': 'foo',
             'web_port': 0,
             'inbound_url': 'www.example.com',
-            'outbound_url': self.API_URL
+            'outbound_url': self.API_URL,
         }
         defaults.update(config)
         transport = yield self.helper.get_transport(defaults)
@@ -155,7 +155,7 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(
                 log,
-                'Webhook setup failed: bad response from Telegram'
+                'Webhook setup failed: bad response from Telegram',
             )
 
         # Ignore statuses published on transport startup
@@ -186,7 +186,7 @@ class TestTelegramTransport(VumiTestCase):
             [log] = lc.messages()
             self.assertEqual(
                 log,
-                'Webhook setup failed: request redirected'
+                'Webhook setup failed: request redirected',
             )
 
         # Ignore statuses published on transport startup (only one, since
@@ -457,7 +457,7 @@ class TestTelegramTransport(VumiTestCase):
             'update_id': 1234,
             'message': {
                 'message_id': 5678,
-                'object': 'This is not a text message...'
+                'object': 'This is not a text message...',
             },
         })
 
@@ -640,7 +640,7 @@ class TestTelegramTransport(VumiTestCase):
             to_addr=self.default_user['username'],
             to_addr_type='telegram_username',
             from_addr=self.bot_username,
-            transport_metadata={'telegram_user_id': self.default_user['id']}
+            transport_metadata={'telegram_user_id': self.default_user['id']},
         )
         d = self.helper.dispatch_outbound(msg)
 
@@ -700,7 +700,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assert_dict(outbound_msg, {
             'text': msg['content'],
             'chat_id': msg['transport_metadata']['telegram_user_id'],
-            'reply_to_message': msg['transport_metadata']['telegram_msg_id']
+            'reply_to_message': msg['transport_metadata']['telegram_msg_id'],
         })
 
         req.write(json.dumps({'ok': True}))
@@ -824,7 +824,8 @@ class TestTelegramTransport(VumiTestCase):
             status_type='test',
             message_id='id',
             message='Some kind of error',
-            details={'error': error})
+            details={'error': error},
+        )
         yield self.assert_nack('id', 'Some kind of error')
 
         # Ignore statuses published on transport startup
