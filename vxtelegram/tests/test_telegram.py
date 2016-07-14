@@ -246,7 +246,7 @@ class TestTelegramTransport(VumiTestCase):
         transport = yield self.get_transport()
         default_channel = {
             'id': 2468,
-            'type': 'channel',
+            'type': self.CHANNEL,
         }
         inbound_msg = {
             'message_id': 1234,
@@ -257,11 +257,9 @@ class TestTelegramTransport(VumiTestCase):
         message = transport.translate_inbound_message(inbound_msg)
         self.assert_dict(message, {
             'content': inbound_msg['text'],
-            'to_addr': self.bot_username,
             'from_addr': default_channel['id'],
-            'from_addr_type': self.TELEGRAM_ID,
             'telegram_msg_id': inbound_msg['message_id'],
-            'telegram_user_id': default_channel['id'],
+            'telegram_username': None,
         })
 
     @inlineCallbacks
@@ -280,11 +278,9 @@ class TestTelegramTransport(VumiTestCase):
         message = transport.translate_inbound_message(inbound_msg)
         self.assert_dict(message, {
             'content': inbound_msg['text'],
-            'to_addr': self.bot_username,
-            'from_addr': self.default_user['username'],
-            'from_addr_type': self.TELEGRAM_USERNAME,
+            'from_addr': self.default_user['id'],
             'telegram_msg_id': inbound_msg['message_id'],
-            'telegram_user_id': self.default_user['id'],
+            'telegram_username': self.default_user['username'],
         })
 
     @inlineCallbacks
@@ -367,14 +363,17 @@ class TestTelegramTransport(VumiTestCase):
         self.assert_dict(msg, {
             'to_addr': self.bot_username,
             'to_addr_type': self.TELEGRAM_USERNAME,
-            'from_addr': self.default_user['username'],
-            'from_addr_type': self.TELEGRAM_USERNAME,
+            'from_addr': self.default_user['id'],
+            'from_addr_type': self.TELEGRAM_ID,
             'content': update['message']['text'],
             'transport_type': transport.transport_type,
             'transport_name': transport.transport_name,
+            'helper_metadata': {'telegram': {
+                'telegram_username': self.default_user['username'],
+            }},
             'transport_metadata': {
                 'telegram_msg_id': update['message']['message_id'],
-                'telegram_user_id': self.default_user['id'],
+                'telegram_username': self.default_user['username'],
             },
         })
 
@@ -419,18 +418,19 @@ class TestTelegramTransport(VumiTestCase):
             'content': update['inline_query']['query'],
             'to_addr': self.bot_username,
             'to_addr_type': self.TELEGRAM_USERNAME,
-            'from_addr': self.default_user['username'],
-            'from_addr_type': self.TELEGRAM_USERNAME,
+            'from_addr': self.default_user['id'],
+            'from_addr_type': self.TELEGRAM_ID,
             'transport_type': transport.transport_type,
             'transport_name': transport.transport_name,
             'helper_metadata': {'telegram': {
                 'type': 'inline_query',
                 'details': {'inline_query_id': update['inline_query']['id']},
+                'telegram_username': self.default_user['username'],
             }},
             'transport_metadata': {
                 'type': 'inline_query',
                 'details': {'inline_query_id': update['inline_query']['id']},
-                'telegram_user_id': self.default_user['id'],
+                'telegram_username': self.default_user['username'],
             },
         })
 
