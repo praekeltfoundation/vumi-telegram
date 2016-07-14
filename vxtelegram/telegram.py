@@ -267,9 +267,9 @@ class TelegramTransport(HttpRpcTransport):
             transport_type=self.transport_type,
             transport_name=self.transport_name,
             helper_metadata={'telegram': {
-                    'type': 'inline_query',
-                    'details': {'inline_query_id': inline_query['id']},
-                    'telegram_username': inline_query['from'].get('username'),
+                'type': 'inline_query',
+                'details': {'inline_query_id': inline_query['id']},
+                'telegram_username': inline_query['from'].get('username'),
             }},
             transport_metadata={
                 'type': 'inline_query',
