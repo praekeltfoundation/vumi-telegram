@@ -51,7 +51,7 @@ class TelegramTransport(HttpRpcTransport):
 
     # Telegram usernames are human-readable strings that identify users
     TELEGRAM_USERNAME = 'telegram_username'
-    # Telegram ids are integers that identify users in the Telegram API
+    # Telegram ids are integers that identify users to the Telegram API
     TELEGRAM_ID = 'telegram_id'
 
     @classmethod
@@ -174,22 +174,31 @@ class TelegramTransport(HttpRpcTransport):
             return
 
         message = self.translate_inbound_message(update['message'])
+
+        # For logging purposes only
+        if message['telegram_username'] is None:
+            user = message['from_addr']
+        else:
+            user = message['telegram_username']
         self.log.info(
             'TelegramTransport receiving inbound message from %s to %s' % (
-                message['from_addr'], message['to_addr']))
+                user, self.bot_username))
 
         yield self.publish_message(
             message_id=message_id,
             content=message['content'],
-            to_addr=message['to_addr'],
+            to_addr=self.bot_username,
             to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=message['from_addr'],
-            from_addr_type=message['from_addr_type'],
+            from_addr_type=self.TELEGRAM_ID,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
+            helper_metadata={'telegram': {
+                'telegram_username': message['telegram_username'],
+            }},
             transport_metadata={
                 'telegram_msg_id': message['telegram_msg_id'],
-                'telegram_user_id': message['telegram_user_id'],
+                'telegram_username': message['telegram_username'],
             },
         )
 
@@ -238,29 +247,34 @@ class TelegramTransport(HttpRpcTransport):
         # NOTE: Telegram supports multiple ways to answer inline queries with
         #       rich content (articles, multimedia etc.)
         #       see: https://core.telegram.org/bots/api#answerinlinequery
+
+        # For logging purposes only
+        if inline_query['from'].get('username') is None:
+            user = inline_query['from']['id']
+        else:
+            user = inline_query['from']['username']
         self.log.info(
             'TelegramTransport receiving inline query from %s to %s' % (
-                inline_query['from']['username'], self.bot_username))
+                user, self.bot_username))
 
         yield self.publish_message(
             message_id=message_id,
             content=inline_query['query'],
             to_addr=self.bot_username,
             to_addr_type=self.TELEGRAM_USERNAME,
-            from_addr=inline_query['from']['username'],
-            from_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=inline_query['from']['id'],
+            from_addr_type=self.TELEGRAM_ID,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
-            helper_metadata={
-                'telegram': {
+            helper_metadata={'telegram': {
                     'type': 'inline_query',
                     'details': {'inline_query_id': inline_query['id']},
-                },
-            },
+                    'telegram_username': inline_query['from'].get('username'),
+            }},
             transport_metadata={
                 'type': 'inline_query',
                 'details': {'inline_query_id': inline_query['id']},
-                'telegram_user_id': inline_query['from']['id'],
+                'telegram_username': inline_query['from'].get('username'),
             },
         )
 
@@ -273,31 +287,25 @@ class TelegramTransport(HttpRpcTransport):
 
     def translate_inbound_message(self, message):
         """
-        Translates inbound Telegram message into Vumi's default format. We want
-        to use the user's username as from_addr if possible, for readability.
+        Translates inbound Telegram message into Vumi's default format.
         """
         telegram_msg_id = message['message_id']
         content = message['text']
-        to_addr = self.bot_username
 
         # Messages sent over channels do not contain a 'from' field - in that
         # case, we want the channel's chat id
         if 'from' in message:
-            from_addr = message['from']['username']
-            from_addr_type = self.TELEGRAM_USERNAME
-            telegram_user_id = message['from']['id']
+            from_addr = message['from']['id']
+            telegram_username = message['from'].get('username')
         else:
             from_addr = message['chat']['id']
-            from_addr_type = self.TELEGRAM_ID
-            telegram_user_id = from_addr
+            telegram_username = message['chat'].get('username')
 
         return {
             'telegram_msg_id': telegram_msg_id,
             'content': content,
-            'to_addr': to_addr,
             'from_addr': from_addr,
-            'from_addr_type': from_addr_type,
-            'telegram_user_id': telegram_user_id,
+            'telegram_username': telegram_username,
         }
 
     @inlineCallbacks
