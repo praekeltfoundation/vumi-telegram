@@ -318,7 +318,7 @@ class TelegramTransport(HttpRpcTransport):
             return
 
         outbound_msg = {
-            'chat_id': message['transport_metadata']['telegram_user_id'],
+            'chat_id': message['to_addr'],
             'text': message['content'],
         }
 
