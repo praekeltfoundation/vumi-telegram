@@ -724,7 +724,7 @@ class TestTelegramTransport(VumiTestCase):
         self.assert_dict(outbound_msg, {
             'text': msg['content'],
             'chat_id': msg['to_addr'],
-            'reply_to_message': msg['transport_metadata']['telegram_msg_id'],
+            'reply_to_message_id': msg['transport_metadata']['telegram_msg_id'],
         })
 
         req.write(json.dumps({'ok': True}))
