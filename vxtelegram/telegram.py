@@ -151,6 +151,15 @@ class TelegramTransport(HttpRpcTransport):
             return
         yield self.mark_as_seen(update_id)
 
+        # Handle callback queries separately
+        if 'callback_query' in update:
+            yield self.handle_inbound_callback_query(
+                message_id=message_id,
+                callback_query=update['callback_query'],
+            )
+            request.finish()
+            return
+
         # Handle inline queries separately
         if 'inline_query' in update:
             yield self.handle_inbound_inline_query(
@@ -237,6 +246,43 @@ class TelegramTransport(HttpRpcTransport):
             type=status_type,
             message=message,
             details=details,
+        )
+
+    @inlineCallbacks
+    def handle_inbound_callback_query(self, message_id, callback_query):
+        """
+        Handles an inbound callback query, fired when a user makes a selection
+        on an inline keyboard.
+        """
+        # NOTE: Telegram displays a progress bar until answerCallbackQuery
+        #       is called - this means we have to call this method even if we
+        #       don't intend to send anything to the user
+
+        self.log.info(
+            'TelegramTransport receiving callback query from %s to %s' % (
+                callback_query['from']['username'], self.bot_username))
+
+        yield self.publish_message(
+            message_id=message_id,
+            content=callback_query.get('data'),     # This field is optional
+            to_addr=self.bot_username,
+            to_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=callback_query['from']['id'],
+            from_addr_type=self.TELEGRAM_ID,
+            transport_type=self.transport_type,
+            transport_name=self.transport_name,
+            transport_metadata={
+                'type': 'callback_query',
+                'details': {'callback_query_id': callback_query['id']},
+                'telegram_username': callback_query['from']['username'],
+            },
+        )
+
+        yield self.add_status(
+            status='ok',
+            component='telegram_inbound',
+            type='good_inbound',
+            message='Good inbound request',
         )
 
     @inlineCallbacks
