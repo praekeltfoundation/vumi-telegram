@@ -694,6 +694,40 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
+    def test_outbound_message_with_formatting(self):
+        """
+        We should update the message object to include any formatting options
+        the application embeds in the helper_metadata dict.
+        """
+        yield self.get_transport()
+        msg = self.helper.make_outbound(
+            content='This is a message',
+            to_addr=self.default_user['username'],
+            to_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=self.bot_username,
+            transport_metadata={
+                'telegram_msg_id': 1234,
+                'telegram_user_id': 36912,
+            },
+            helper_metadata={
+                'telegram': {
+                    'reply_markup': {'force_reply': True},
+                },
+            },
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        self.assertEqual(req.method, 'POST')
+
+        outbound_msg = json.load(req.content)
+        self.assert_dict(outbound_msg, {
+            'text': msg['content'],
+            'chat_id': msg['to_addr'],
+            'reply_markup': {'force_reply': True},
+        })
+
+    @inlineCallbacks
     def test_outbound_reply_no_errors(self):
         """
         We should be able to reply to messages using the original message's
