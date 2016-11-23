@@ -421,7 +421,7 @@ class TelegramTransport(HttpRpcTransport):
             url=url,
             data=json.dumps(params),
             headers={'Content-Type': ['application/json']},
-            allow_redirects=false,
+            allow_redirects=False,
         )
 
         validate = yield self.validate_outbound(r)
@@ -438,12 +438,10 @@ class TelegramTransport(HttpRpcTransport):
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Callback query reply not sent: %s'
-                    % validate['message'],
+                        % validate['message'],
                 status_type=validate['status'],
                 details=validate['details'],
             )
-
-
 
     @inlineCallbacks
     def handle_outbound_inline_query(self, message_id, message):
