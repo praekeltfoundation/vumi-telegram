@@ -417,7 +417,7 @@ class TelegramTransport(HttpRpcTransport):
         }
         params.update(message['helper_metadata']['telegram'].get('details'))
 
-        r = http_client.post(
+        r = yield http_client.post(
             url=url,
             data=json.dumps(params),
             headers={'Content-Type': ['application/json']},
