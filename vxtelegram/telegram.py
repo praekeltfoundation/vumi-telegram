@@ -329,9 +329,7 @@ class TelegramTransport(HttpRpcTransport):
 
         # Handle message formatting options (pass if none are provided)
         try:
-            telegram_metadata = message['helper_metadata']['telegram']
-            for option in telegram_metadata:
-                outbound_msg.update({option: telegram_metadata['option']})
+            outbound_msg.update(message['helper_metadata']['telegram'])
         except KeyError:
             pass
 
