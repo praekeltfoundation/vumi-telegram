@@ -378,6 +378,58 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
+    def test_inbound_callback_query(self):
+        """
+        We should be able to receive callback queries from Telegram and publish
+        them as Vumi messages, as well as log the receipt and update status.
+        """
+        transport = yield self.get_transport(publish_status=True)
+        expected_log = (
+            'TelegramTransport receiving callback query from %s to %s' %
+            (self.default_user['username'], self.bot_username)
+        )
+        update = {
+            'update_id': 1234,
+            'callback_query': {
+                'id': '1234',
+                'from': self.default_user,
+                'data': 'This is the data',
+            },
+        }
+
+        d = self.helper.mk_request(_method='POST', _data=json.dumps(update))
+        with LogCatcher(message='callback') as lc:
+            res = yield d
+            [log] = lc.messages()
+            self.assertEqual(log, expected_log)
+        self.assertEqual(res.code, http.OK)
+
+        # Ignore statuses published on transport startup
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(status, {
+            'status': 'ok',
+            'component': 'telegram_inbound',
+            'type': 'good_inbound',
+            'message': 'Good inbound request',
+        })
+
+        [msg] = yield self.helper.wait_for_dispatched_inbound(1)
+        self.assert_dict(msg, {
+            'content': 'This is the data',
+            'to_addr': self.bot_username,
+            'to_addr_type': self.TELEGRAM_USERNAME,
+            'from_addr': self.default_user['id'],
+            'from_addr_type': self.TELEGRAM_ID,
+            'transport_type': transport.transport_type,
+            'transport_name': transport.transport_name,
+            'transport_metadata': {
+                'type': 'callback_query',
+                'details': {'callback_query_id': '1234'},
+                'telegram_username': self.default_user['username'],
+            },
+        })
+
+    @inlineCallbacks
     def test_inbound_inline_query(self):
         """
         We should be able to receive inline queries from Telegram and publish
