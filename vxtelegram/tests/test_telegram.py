@@ -551,6 +551,73 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(status['details']['req_content'], "This isn't JSON!")
 
     @inlineCallbacks
+    def test_outbound_callback_query_reply_no_errors(self):
+        """
+        We should be able to reply to callback queries, and publish an ack and
+        an 'ok' status when we receive a positive response.
+        """
+        # TODO: FIX THIS TEST!
+        yield self.get_transport(publish_status=True)
+        expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
+                                    'answerCallbackQuery')
+
+        msg = self.helper.make_outbound(
+            content='This is your alert',
+            to_addr=self.default_user['username'],
+            to_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=self.bot_username,
+            from_addr_type=self.TELEGRAM_USERNAME,
+            transport_metadata={
+                'type': 'callback_query',
+                'details': {'callback_query_id': '1234'},
+                'telegram_username': self.default_user['username'],
+            },
+            helper_metadata={
+                'telegram': {
+                    'type': 'callback_query_reply',
+                    'details': {
+                        'url': 'http://example.com',
+                        'show_alert': True,
+                    },
+                },
+            },
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        self.assertEqual(req.method, 'POST')
+        self.assertEqual(req.path, expected_url)
+
+        outbound_msg = json.load(req.content)
+        self.assert_dict(outbound_msg, {
+            'callback_query_id': '1234',
+            'text': 'This is your alert',
+            'url': 'http://example.com',
+            'show_alert': True,
+        })
+
+        req.write(json.dumps({'ok': True}))
+        req.finish()
+        yield d
+
+        self.assert_ack(msg['message_id'])
+
+        # Ignore statuses published on transport startup
+        [_, __, out, query] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(out, {
+            'status': 'ok',
+            'component': 'telegram_outbound',
+            'type': 'good_outbound_request',
+            'message': 'Outbound request successful',
+        })
+        self.assert_dict(query, {
+            'status': 'ok',
+            'component': 'telegram_callback_query_reply',
+            'type': 'good_callback_query_reply',
+            'message': 'Outbound request successful',
+        })
+
+    @inlineCallbacks
     def test_outbound_query_reply_no_errors(self):
         """
         We should be able to reply to inline queries using POST requests, and
