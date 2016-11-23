@@ -148,7 +148,12 @@ class TestTelegramTransport(VumiTestCase):
         a 'down' status.
         """
         error = self.bad_telegram_response['description']
+
+        # When we start this transport, it tries to set up a webhook (and
+        # obviously fails), so we need to publish an 'ok' status after so that
+        # the status we're testing for actually gets published
         transport = yield self.get_transport(publish_status=True)
+        yield transport.add_status_good_webhook()
         d = transport.setup_webhook()
 
         req = yield self.get_next_request()
@@ -164,7 +169,7 @@ class TestTelegramTransport(VumiTestCase):
             )
 
         # Ignore statuses published on transport startup
-        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, __, ___, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_webhook',
@@ -196,7 +201,7 @@ class TestTelegramTransport(VumiTestCase):
 
         # Ignore statuses published on transport startup (only one, since
         # during tests this status is already published and doesn't repeat)
-        [_, status] = yield self.helper.wait_for_dispatched_statuses()
+        [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assert_dict(status, {
             'status': 'down',
             'component': 'telegram_webhook',
