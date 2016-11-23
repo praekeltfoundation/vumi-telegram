@@ -363,6 +363,11 @@ class TelegramTransport(HttpRpcTransport):
             yield self.handle_outbound_inline_query(message_id, message)
             return
 
+        # Handle replies to callback queries separately
+        if message['transport_metadata'].get('type') == 'callback_query':
+            self.handle_outbound_callback_query(message_id, message)
+            return
+
         outbound_msg = {
             'chat_id': message['to_addr'],
             'text': message['content'],
@@ -393,6 +398,52 @@ class TelegramTransport(HttpRpcTransport):
                 status_type=validate['status'],
                 details=validate['details'],
             )
+
+    def handle_outbound_callback_query(self, message_id, message):
+        """
+        Handles replies to callback queries from inline keyboards. This method
+        must be called after receiving a callback query (even if we do not
+        send a reply) to prevent the user being stuck with a progress bar.
+        """
+        # TODO: THIS METHOD NEEDS TESTS (w/ errors, unexpected responses etc)!
+        url = self.get_outbound_url('answerCallbackQuery')
+        http_client = HTTPClient(self.agent_factory())
+
+        qry_id = message['transport_metadata']['details']['callback_query_id']
+
+        params = {
+            'callback_query_id': qry_id,
+            'text': message['content'],
+        }
+        params.update(message['helper_metadata']['telegram'].get('details'))
+
+        r = http_client.post(
+            url=url,
+            data=json.dumps(params),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=false,
+        )
+
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
+            yield self.outbound_success(message_id)
+            self.add_status(
+                status='ok',
+                component='telegram_callback_query_reply',
+                type='good_callback_query_reply',
+                message='Outbound request successful',
+            )
+        else:
+            validate['details'].update({'callback_query_id': qry_id})
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Callback query reply not sent: %s'
+                    % validate['message'],
+                status_type=validate['status'],
+                details=validate['details'],
+            )
+
+
 
     @inlineCallbacks
     def handle_outbound_inline_query(self, message_id, message):
