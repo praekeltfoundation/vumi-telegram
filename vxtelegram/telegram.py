@@ -324,8 +324,8 @@ class TelegramTransport(HttpRpcTransport):
 
         # Handle direct replies
         if message['in_reply_to'] is not None:
-            reply_to_message_id = message['transport_metadata']['telegram_msg_id']
-            outbound_msg.update({'reply_to_message_id': reply_to_message_id})
+            telegram_msg_id = message['transport_metadata']['telegram_msg_id']
+            outbound_msg.update({'reply_to_message_id': telegram_msg_id})
 
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
