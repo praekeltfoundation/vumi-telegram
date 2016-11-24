@@ -365,7 +365,7 @@ class TelegramTransport(HttpRpcTransport):
 
         # Handle replies to callback queries separately
         if message['transport_metadata'].get('type') == 'callback_query':
-            self.handle_outbound_callback_query(message_id, message)
+            yield self.handle_outbound_callback_query(message_id, message)
             return
 
         outbound_msg = {
@@ -399,6 +399,7 @@ class TelegramTransport(HttpRpcTransport):
                 details=validate['details'],
             )
 
+    @inlineCallbacks
     def handle_outbound_callback_query(self, message_id, message):
         """
         Handles replies to callback queries from inline keyboards. This method

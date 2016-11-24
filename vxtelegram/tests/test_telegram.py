@@ -556,7 +556,6 @@ class TestTelegramTransport(VumiTestCase):
         We should be able to reply to callback queries, and publish an ack and
         an 'ok' status when we receive a positive response.
         """
-        # TODO: FIX THIS TEST!
         yield self.get_transport(publish_status=True)
         expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
                                     'answerCallbackQuery')
