@@ -333,7 +333,6 @@ class TelegramTransport(HttpRpcTransport):
         except KeyError:
             pass
 
-
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
 
