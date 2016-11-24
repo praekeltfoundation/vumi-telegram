@@ -727,6 +727,12 @@ class TestTelegramTransport(VumiTestCase):
             'reply_markup': {'force_reply': True},
         })
 
+        req.write(json.dumps({'ok': True}))
+        req.finish()
+        yield d
+
+        yield self.assert_ack(msg['message_id'])
+
     @inlineCallbacks
     def test_outbound_reply_no_errors(self):
         """
