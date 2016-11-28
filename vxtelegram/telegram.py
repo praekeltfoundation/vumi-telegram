@@ -327,6 +327,12 @@ class TelegramTransport(HttpRpcTransport):
             telegram_msg_id = message['transport_metadata']['telegram_msg_id']
             outbound_msg.update({'reply_to_message_id': telegram_msg_id})
 
+        # Handle message formatting options (pass if none are provided)
+        try:
+            outbound_msg.update(message['helper_metadata']['telegram'])
+        except KeyError:
+            pass
+
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
 
