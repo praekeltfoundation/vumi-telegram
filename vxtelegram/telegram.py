@@ -272,6 +272,11 @@ class TelegramTransport(HttpRpcTransport):
             from_addr_type=self.TELEGRAM_ID,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
+            helper_metadata={'telegram': {
+                'type': 'callback_query',
+                'details': {'callback_query_id': callback_query['id']},
+                'telegram_username': callback_query['from']['username'],
+            }},
             transport_metadata={
                 'type': 'callback_query',
                 'details': {'callback_query_id': callback_query['id']},

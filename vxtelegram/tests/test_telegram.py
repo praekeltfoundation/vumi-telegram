@@ -446,6 +446,11 @@ class TestTelegramTransport(VumiTestCase):
                 'details': {'callback_query_id': '1234'},
                 'telegram_username': self.default_user['username'],
             },
+            'helper_metadata': {'telegram': {
+                'type': 'callback_query',
+                'details': {'callback_query_id': '1234'},
+                'telegram_username': self.default_user['username'],
+            }},
         })
 
     @inlineCallbacks
