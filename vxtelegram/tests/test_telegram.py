@@ -622,7 +622,7 @@ class TestTelegramTransport(VumiTestCase):
         })
 
     @inlineCallbacks
-    def test_outbound_query_reply_no_errors(self):
+    def test_outbound_inline_query_reply_no_errors(self):
         """
         We should be able to reply to inline queries using POST requests, and
         publish an ack and an 'ok' status when we receive a positive response.
@@ -678,19 +678,19 @@ class TestTelegramTransport(VumiTestCase):
         })
         self.assert_dict(query, {
             'status': 'ok',
-            'component': 'telegram_query_reply',
-            'type': 'good_query_reply',
+            'component': 'telegram_inline_query_reply',
+            'type': 'good_inline_query_reply',
             'message': 'Outbound request successful',
         })
 
     @inlineCallbacks
-    def test_outbound_query_reply_unexpected_format(self):
+    def test_outbound_inline_query_reply_unexpected_format(self):
         """
         We should log and publish a nack / 'down' status when a query reply
         does not contain a results field.
         """
         yield self.get_transport(publish_status=True)
-        expected_log = 'Query reply not sent: results field not present'
+        expected_log = 'Inline query reply not sent: results field missing'
         msg = self.helper.make_outbound(
             content=None,
             to_addr=self.default_user['username'],
@@ -715,9 +715,9 @@ class TestTelegramTransport(VumiTestCase):
         [_, __, status] = yield self.helper.wait_for_dispatched_statuses()
         self.assert_dict(status, {
             'status': 'down',
-            'component': 'telegram_query_reply',
-            'type': 'bad_query_reply',
-            'message': 'Query reply not sent: results field not present',
+            'component': 'telegram_inline_query_reply',
+            'type': 'bad_inline_query_reply',
+            'message': 'Inline query reply not sent: results field missing',
         })
         # We assert this field separately as a substring because it is verbose
         self.assertSubstring(
@@ -756,7 +756,7 @@ class TestTelegramTransport(VumiTestCase):
 
         yield self.assert_nack(
             msg['message_id'],
-            'Query reply not sent: bad response from Telegram',
+            'Inline query reply not sent: bad response from Telegram',
         )
 
         # Ignore statuses published on transport startup
@@ -765,7 +765,8 @@ class TestTelegramTransport(VumiTestCase):
             'status': 'down',
             'component': 'telegram_outbound',
             'type': 'bad_response',
-            'message': 'Query reply not sent: bad response from Telegram',
+            'message': 'Inline query reply not sent: '
+                       'bad response from Telegram',
             'details': {
                 'error': 'INVALID_QUERY_ID',
                 'res_code': 400,

@@ -290,10 +290,6 @@ class TelegramTransport(HttpRpcTransport):
         """
         Handles an inbound inline query from a Telegram user.
         """
-        # NOTE: Telegram supports multiple ways to answer inline queries with
-        #       rich content (articles, multimedia etc.)
-        #       see: https://core.telegram.org/bots/api#answerinlinequery
-
         # For logging purposes only
         if inline_query['from'].get('username') is None:
             user = inline_query['from']['id']
@@ -468,21 +464,22 @@ class TelegramTransport(HttpRpcTransport):
 
         # Don't break if outbound messages are not in the correct format
         except KeyError:
-            self.log.info('Query reply not sent: results field not present')
+            self.log.info(
+                'Inline query reply not sent: results field missing')
             self.publish_nack(
                 message_id,
-                'Query reply not sent: results field not present',
+                'Inline query reply not sent: results field missing',
             )
             self.add_status(
                 status='down',
-                component='telegram_query_reply',
-                type='bad_query_reply',
-                message='Query reply not sent: results field not present',
+                component='telegram_inline_query_reply',
+                type='bad_inline_query_reply',
+                message='Inline query reply not sent: results field missing',
                 details={
-                    'error': "Transport received an outbound query reply that "
-                             "did not contain any results. Check that your "
-                             "application is configured to reply to inline "
-                             "queries. If you're not supporting inline "
+                    'error': "Transport received an outbound inline query "
+                             "reply that did not contain any results. Check "
+                             "that your application is configured to reply to "
+                             "inline queries. If you're not supporting inline "
                              "queries, you should disable your bot's inline "
                              "mode.",
                 },
@@ -501,15 +498,16 @@ class TelegramTransport(HttpRpcTransport):
             yield self.outbound_success(message_id)
             self.add_status(
                 status='ok',
-                component='telegram_query_reply',
-                type='good_query_reply',
+                component='telegram_inline_query_reply',
+                type='good_inline_query_reply',
                 message='Outbound request successful',
             )
         else:
             validate['details'].update({'inline_query_id': query_id})
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Query reply not sent: %s' % validate['message'],
+                message='Inline query reply not sent: %s' %
+                        validate['message'],
                 status_type=validate['status'],
                 details=validate['details'],
             )
