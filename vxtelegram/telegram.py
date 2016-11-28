@@ -264,7 +264,7 @@ class TelegramTransport(HttpRpcTransport):
 
         yield self.publish_message(
             message_id=message_id,
-            content=callback_query.get('data'),     # This field is optional
+            content=callback_query.get('data'),
             to_addr=self.bot_username,
             to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=callback_query['from']['id'],
@@ -412,7 +412,6 @@ class TelegramTransport(HttpRpcTransport):
         must be called after receiving a callback query (even if we do not
         send a reply) to prevent the user being stuck with a progress bar.
         """
-        # TODO: THIS METHOD NEEDS TESTS (w/ errors, unexpected responses etc)!
         url = self.get_outbound_url('answerCallbackQuery')
         http_client = HTTPClient(self.agent_factory())
 
