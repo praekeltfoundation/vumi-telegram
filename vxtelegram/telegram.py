@@ -74,6 +74,7 @@ class TelegramTransport(HttpRpcTransport):
         self.redis = yield TxRedisManager.from_config(config.redis_manager)
 
         yield self.setup_webhook()
+        yield self.add_status_started()
 
     @inlineCallbacks
     def setup_webhook(self):
@@ -592,4 +593,12 @@ class TelegramTransport(HttpRpcTransport):
             component='telegram_setup',
             type='starting',
             message='Telegram transport starting...',
+        )
+
+    def add_status_started(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_setup',
+            type='started',
+            message='Telegram transport set up',
         )
