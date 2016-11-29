@@ -425,7 +425,8 @@ class TelegramTransport(HttpRpcTransport):
         try:
             url = self.get_outbound_url(self.media_api_path[att['type']])
         except KeyError:
-            self.log.info('Unsupported attachment type: %s' % att['type'])
+            self.log.info('Unsupported attachment type: %s' % att.get('type'))
+            return
 
         http_client = HTTPClient(self.agent_factory())
         params = {
@@ -458,7 +459,7 @@ class TelegramTransport(HttpRpcTransport):
         else:
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Media message reply not sent: %s'
+                message='Media message not sent: %s'
                         % validate['message'],
                 status_type=validate['status'],
                 details=validate['details'],
