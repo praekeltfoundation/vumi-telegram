@@ -348,7 +348,7 @@ class TestTelegramTransport(VumiTestCase):
         yield self.helper.clear_dispatched_statuses()
 
         expected_log = (
-            'TelegramTransport receiving inbound message from %s to %s' %
+            'TelegramTransport receiving message from %s to %s' %
             (self.default_user['username'], self.bot_username)
         )
         update = {
@@ -712,7 +712,6 @@ class TestTelegramTransport(VumiTestCase):
                 'res_code': 400,
             },
         })
-
 
     @inlineCallbacks
     def test_outbound_callback_query_reply_no_errors(self):

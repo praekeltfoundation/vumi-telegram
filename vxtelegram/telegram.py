@@ -132,6 +132,18 @@ class TelegramTransport(HttpRpcTransport):
     def get_outbound_url(self, path):
         return '%s/%s' % (self.api_url, path)
 
+    def log_inbound(self, update_type, user):
+        """
+        Log the receipt of an inbound update.
+        """
+        if user.get('username') is None:
+            user = user['id']
+        else:
+            user = user['username']
+        self.log.info(
+            'TelegramTransport receiving %s from %s to %s' % (
+                update_type, user, self.bot_username))
+
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
         content = yield request.content.read()
@@ -189,15 +201,10 @@ class TelegramTransport(HttpRpcTransport):
             return
 
         message = self.translate_inbound_message(update['message'])
-
-        # For logging purposes only
-        if message['telegram_username'] is None:
-            user = message['from_addr']
-        else:
-            user = message['telegram_username']
-        self.log.info(
-            'TelegramTransport receiving inbound message from %s to %s' % (
-                user, self.bot_username))
+        self.log_inbound('message', {
+            'id': message['from_addr'],
+            'username': message['telegram_username'],
+        })
 
         yield self.publish_message(
             message_id=message_id,
@@ -260,9 +267,7 @@ class TelegramTransport(HttpRpcTransport):
         Handles an inbound callback query, fired when a user makes a selection
         on an inline keyboard.
         """
-        self.log.info(
-            'TelegramTransport receiving callback query from %s to %s' % (
-                callback_query['from']['username'], self.bot_username))
+        self.log_inbound('callback query', callback_query['from'])
 
         yield self.publish_message(
             message_id=message_id,
@@ -297,14 +302,7 @@ class TelegramTransport(HttpRpcTransport):
         """
         Handles an inbound inline query from a Telegram user.
         """
-        # For logging purposes only
-        if inline_query['from'].get('username') is None:
-            user = inline_query['from']['id']
-        else:
-            user = inline_query['from']['username']
-        self.log.info(
-            'TelegramTransport receiving inline query from %s to %s' % (
-                user, self.bot_username))
+        self.log_inbound('inline query', inline_query['from'])
 
         yield self.publish_message(
             message_id=message_id,
@@ -390,10 +388,8 @@ class TelegramTransport(HttpRpcTransport):
             outbound_msg.update({'reply_to_message_id': telegram_msg_id})
 
         # Handle message formatting options (pass if none are provided)
-        try:
-            outbound_msg.update(message['helper_metadata']['telegram'])
-        except KeyError:
-            pass
+        if metadata is not None:
+            outbound_msg.update(metadata)
 
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
