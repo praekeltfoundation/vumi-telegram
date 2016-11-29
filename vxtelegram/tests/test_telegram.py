@@ -593,8 +593,10 @@ class TestTelegramTransport(VumiTestCase):
             to_addr_type=self.TELEGRAM_ID,
             from_addr=self.bot_username,
             from_addr_type=self.TELEGRAM_USERNAME,
+            in_reply_to=2468,
             transport_metadata={
                 'telegram_username': self.default_user['username'],
+                'telegram_msg_id': 1234,
             },
             helper_metadata={'telegram': {
                 'attachment': {
@@ -617,6 +619,7 @@ class TestTelegramTransport(VumiTestCase):
             'photo': 'http://url.com/photo',
             'caption': 'This is your photo',
             'disable_notification': True,
+            'reply_to_message_id': 1234,
         })
         self.assertIsNone(outbound_msg.get('type'))
 
@@ -639,6 +642,77 @@ class TestTelegramTransport(VumiTestCase):
             'type': 'good_outbound_media_message',
             'message': 'Outbound request successful',
         })
+
+    @inlineCallbacks
+    def test_outbound_media_message_unsupported_type(self):
+        """
+        When we receive an outbound message with an unsupported attachment, we
+        should log it and carry on without breaking.
+        """
+        yield self.get_transport()
+        msg = self.helper.make_outbound(
+            content="It doesn't matter, this doesn't get sent",
+            to_addr=self.default_user['username'],
+            from_addr=self.bot_username,
+            helper_metadata={'telegram': {
+                'attachment': {
+                    'type': 'someFileType',
+                },
+            }},
+        )
+        with LogCatcher(message='attachment') as lc:
+            yield self.helper.dispatch_outbound(msg)
+            [log] = lc.messages()
+            self.assertEqual(log, 'Unsupported attachment type: someFileType')
+
+    @inlineCallbacks
+    def test_outbound_media_message_with_errors(self):
+        """
+        We should publish a nack and a 'down' status when we receive an error
+        response from Telegram while trying to send a media message.
+        """
+        yield self.get_transport(publish_status=True)
+        yield self.helper.clear_dispatched_statuses()
+
+        msg = self.helper.make_outbound(
+            content=None,
+            to_addr=self.default_user['username'],
+            to_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=self.bot_username,
+            helper_metadata={'telegram': {
+                'attachment': {
+                    'type': 'photo',
+                    'photo': 'http://url.com/photo',
+                    'caption': 'This is your photo',
+                    'disable_notification': True,
+                },
+            }},
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        req.setResponseCode(http.BAD_REQUEST)
+        req.write(json.dumps({'ok': False, 'description': 'BAD_REQUEST'}))
+        req.finish()
+        yield d
+
+        yield self.assert_nack(
+            msg['message_id'],
+            'Media message not sent: bad response from Telegram',
+        )
+
+        [status] = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(status, {
+            'status': 'down',
+            'component': 'telegram_outbound',
+            'type': 'bad_response',
+            'message': 'Media message not sent: bad response from Telegram',
+            'details': {
+                'error': 'BAD_REQUEST',
+                'res_code': 400,
+            },
+        })
+
 
     @inlineCallbacks
     def test_outbound_callback_query_reply_no_errors(self):
