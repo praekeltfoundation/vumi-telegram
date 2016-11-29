@@ -74,6 +74,7 @@ class TelegramTransport(HttpRpcTransport):
         self.redis = yield TxRedisManager.from_config(config.redis_manager)
 
         yield self.setup_webhook()
+        yield self.add_status_started()
 
     @inlineCallbacks
     def setup_webhook(self):
@@ -150,6 +151,15 @@ class TelegramTransport(HttpRpcTransport):
             request.finish()
             return
         yield self.mark_as_seen(update_id)
+
+        # Handle callback queries separately
+        if 'callback_query' in update:
+            yield self.handle_inbound_callback_query(
+                message_id=message_id,
+                callback_query=update['callback_query'],
+            )
+            request.finish()
+            return
 
         # Handle inline queries separately
         if 'inline_query' in update:
@@ -240,14 +250,52 @@ class TelegramTransport(HttpRpcTransport):
         )
 
     @inlineCallbacks
+    def handle_inbound_callback_query(self, message_id, callback_query):
+        """
+        Handles an inbound callback query, fired when a user makes a selection
+        on an inline keyboard.
+        """
+        # NOTE: Telegram displays a progress bar until answerCallbackQuery
+        #       is called - this means we have to call this method even if we
+        #       don't intend to send anything to the user
+
+        self.log.info(
+            'TelegramTransport receiving callback query from %s to %s' % (
+                callback_query['from']['username'], self.bot_username))
+
+        yield self.publish_message(
+            message_id=message_id,
+            content=callback_query.get('data'),
+            to_addr=self.bot_username,
+            to_addr_type=self.TELEGRAM_USERNAME,
+            from_addr=callback_query['from']['id'],
+            from_addr_type=self.TELEGRAM_ID,
+            transport_type=self.transport_type,
+            transport_name=self.transport_name,
+            helper_metadata={'telegram': {
+                'type': 'callback_query',
+                'details': {'callback_query_id': callback_query['id']},
+                'telegram_username': callback_query['from']['username'],
+            }},
+            transport_metadata={
+                'type': 'callback_query',
+                'details': {'callback_query_id': callback_query['id']},
+                'telegram_username': callback_query['from']['username'],
+            },
+        )
+
+        yield self.add_status(
+            status='ok',
+            component='telegram_inbound',
+            type='good_inbound',
+            message='Good inbound request',
+        )
+
+    @inlineCallbacks
     def handle_inbound_inline_query(self, message_id, inline_query):
         """
         Handles an inbound inline query from a Telegram user.
         """
-        # NOTE: Telegram supports multiple ways to answer inline queries with
-        #       rich content (articles, multimedia etc.)
-        #       see: https://core.telegram.org/bots/api#answerinlinequery
-
         # For logging purposes only
         if inline_query['from'].get('username') is None:
             user = inline_query['from']['id']
@@ -317,6 +365,11 @@ class TelegramTransport(HttpRpcTransport):
             yield self.handle_outbound_inline_query(message_id, message)
             return
 
+        # Handle replies to callback queries separately
+        if message['transport_metadata'].get('type') == 'callback_query':
+            yield self.handle_outbound_callback_query(message_id, message)
+            return
+
         outbound_msg = {
             'chat_id': message['to_addr'],
             'text': message['content'],
@@ -355,6 +408,50 @@ class TelegramTransport(HttpRpcTransport):
             )
 
     @inlineCallbacks
+    def handle_outbound_callback_query(self, message_id, message):
+        """
+        Handles replies to callback queries from inline keyboards. This method
+        must be called after receiving a callback query (even if we do not
+        send a reply) to prevent the user being stuck with a progress bar.
+        """
+        url = self.get_outbound_url('answerCallbackQuery')
+        http_client = HTTPClient(self.agent_factory())
+
+        qry_id = message['transport_metadata']['details']['callback_query_id']
+
+        params = {
+            'callback_query_id': qry_id,
+            'text': message['content'],
+        }
+        params.update(message['helper_metadata']['telegram'].get('details'))
+
+        r = yield http_client.post(
+            url=url,
+            data=json.dumps(params),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=False,
+        )
+
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
+            yield self.outbound_success(message_id)
+            self.add_status(
+                status='ok',
+                component='telegram_callback_query_reply',
+                type='good_callback_query_reply',
+                message='Outbound request successful',
+            )
+        else:
+            validate['details'].update({'callback_query_id': qry_id})
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Callback query reply not sent: %s'
+                        % validate['message'],
+                status_type=validate['status'],
+                details=validate['details'],
+            )
+
+    @inlineCallbacks
     def handle_outbound_inline_query(self, message_id, message):
         """
         Handles replies to inline queries. We rely on the application worker to
@@ -373,21 +470,22 @@ class TelegramTransport(HttpRpcTransport):
 
         # Don't break if outbound messages are not in the correct format
         except KeyError:
-            self.log.info('Query reply not sent: results field not present')
+            self.log.info(
+                'Inline query reply not sent: results field missing')
             self.publish_nack(
                 message_id,
-                'Query reply not sent: results field not present',
+                'Inline query reply not sent: results field missing',
             )
             self.add_status(
                 status='down',
-                component='telegram_query_reply',
-                type='bad_query_reply',
-                message='Query reply not sent: results field not present',
+                component='telegram_inline_query_reply',
+                type='bad_inline_query_reply',
+                message='Inline query reply not sent: results field missing',
                 details={
-                    'error': "Transport received an outbound query reply that "
-                             "did not contain any results. Check that your "
-                             "application is configured to reply to inline "
-                             "queries. If you're not supporting inline "
+                    'error': "Transport received an outbound inline query "
+                             "reply that did not contain any results. Check "
+                             "that your application is configured to reply to "
+                             "inline queries. If you're not supporting inline "
                              "queries, you should disable your bot's inline "
                              "mode.",
                 },
@@ -406,15 +504,16 @@ class TelegramTransport(HttpRpcTransport):
             yield self.outbound_success(message_id)
             self.add_status(
                 status='ok',
-                component='telegram_query_reply',
-                type='good_query_reply',
+                component='telegram_inline_query_reply',
+                type='good_inline_query_reply',
                 message='Outbound request successful',
             )
         else:
             validate['details'].update({'inline_query_id': query_id})
             yield self.outbound_failure(
                 message_id=message_id,
-                message='Query reply not sent: %s' % validate['message'],
+                message='Inline query reply not sent: %s' %
+                        validate['message'],
                 status_type=validate['status'],
                 details=validate['details'],
             )
@@ -499,4 +598,12 @@ class TelegramTransport(HttpRpcTransport):
             component='telegram_setup',
             type='starting',
             message='Telegram transport starting...',
+        )
+
+    def add_status_started(self):
+        return self.add_status(
+            status='ok',
+            component='telegram_setup',
+            type='started',
+            message='Telegram transport set up',
         )
