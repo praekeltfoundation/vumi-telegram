@@ -576,6 +576,71 @@ class TestTelegramTransport(VumiTestCase):
         self.assertEqual(status['details']['req_content'], "This isn't JSON!")
 
     @inlineCallbacks
+    def test_outbound_media_message_no_errors(self):
+        """
+        We should be able to send messages with various media attachments, and
+        publish an ack and an 'ok' status when we receive a positive response.
+        """
+        yield self.get_transport(publish_status=True)
+        yield self.helper.clear_dispatched_statuses()
+
+        expected_url = '%s%s/%s' % (self.API_URL.rstrip('/'), self.TOKEN,
+                                    'sendPhoto')
+
+        msg = self.helper.make_outbound(
+            content="It doesn't matter, this doesn't get sent",
+            to_addr=self.default_user['id'],
+            to_addr_type=self.TELEGRAM_ID,
+            from_addr=self.bot_username,
+            from_addr_type=self.TELEGRAM_USERNAME,
+            transport_metadata={
+                'telegram_username': self.default_user['username'],
+            },
+            helper_metadata={'telegram': {
+                'attachment': {
+                    'type': 'photo',
+                    'photo': 'http://url.com/photo',
+                    'caption': 'This is your photo',
+                    'disable_notification': True,
+                },
+            }},
+        )
+        d = self.helper.dispatch_outbound(msg)
+
+        req = yield self.get_next_request()
+        self.assertEqual(req.method, 'POST')
+        self.assertEqual(req.path, expected_url)
+
+        outbound_msg = json.load(req.content)
+        self.assert_dict(outbound_msg, {
+            'chat_id': self.default_user['id'],
+            'photo': 'http://url.com/photo',
+            'caption': 'This is your photo',
+            'disable_notification': True,
+        })
+        self.assertIsNone(outbound_msg.get('type'))
+
+        req.write(json.dumps({'ok': True}))
+        req.finish()
+        yield d
+
+        self.assert_ack(msg['message_id'])
+
+        out, media = yield self.helper.wait_for_dispatched_statuses()
+        self.assert_dict(out, {
+            'status': 'ok',
+            'component': 'telegram_outbound',
+            'type': 'good_outbound_request',
+            'message': 'Outbound request successful',
+        })
+        self.assert_dict(media, {
+            'status': 'ok',
+            'component': 'telegram_outbound_media_message',
+            'type': 'good_outbound_media_message',
+            'message': 'Outbound request successful',
+        })
+
+    @inlineCallbacks
     def test_outbound_callback_query_reply_no_errors(self):
         """
         We should be able to reply to callback queries, and publish an ack and

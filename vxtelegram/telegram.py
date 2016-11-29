@@ -54,6 +54,14 @@ class TelegramTransport(HttpRpcTransport):
     # Telegram ids are integers that identify users to the Telegram API
     TELEGRAM_ID = 'telegram_id'
 
+    media_api_path = {
+        'photo': 'sendPhoto',
+        'document': 'sendDocument',
+        'contact': 'sendContact',
+        'venue': 'sendVenue',
+        'location': 'sendLocation',
+    }
+
     @classmethod
     def agent_factory(cls):
         """
@@ -359,6 +367,7 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def handle_outbound_message(self, message):
         message_id = message['message_id']
+        metadata = message['helper_metadata'].get('telegram')
 
         # Handle replies to inline queries separately
         if message['transport_metadata'].get('type') == 'inline_query':
@@ -369,6 +378,13 @@ class TelegramTransport(HttpRpcTransport):
         if message['transport_metadata'].get('type') == 'callback_query':
             yield self.handle_outbound_callback_query(message_id, message)
             return
+
+        # Handle messages with media attachments
+        if metadata is not None:
+            attachment = metadata.get('attachment')
+            if attachment is not None:
+                yield self.handle_outbound_media_message(message_id, message)
+                return
 
         outbound_msg = {
             'chat_id': message['to_addr'],
@@ -403,6 +419,54 @@ class TelegramTransport(HttpRpcTransport):
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Message not sent: %s' % validate['message'],
+                status_type=validate['status'],
+                details=validate['details'],
+            )
+
+    @inlineCallbacks
+    def handle_outbound_media_message(self, message_id, message):
+        """
+        Handles an outbound message that contains embedded media.
+        """
+        att = message['helper_metadata']['telegram']['attachment']
+        try:
+            url = self.get_outbound_url(self.media_api_path[att['type']])
+        except KeyError:
+            self.log.info('Unsupported attachment type: %s' % att['type'])
+
+        http_client = HTTPClient(self.agent_factory())
+        params = {
+            'chat_id': message['to_addr'],
+        }
+        params.update(att)
+        del params['type']
+
+        # Handle direct replies
+        if message['in_reply_to'] is not None:
+            telegram_msg_id = message['transport_metadata']['telegram_msg_id']
+            params.update({'reply_to_message_id': telegram_msg_id})
+
+        r = yield http_client.post(
+            url=url,
+            data=json.dumps(params),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=False,
+        )
+
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
+            yield self.outbound_success(message_id)
+            self.add_status(
+                status='ok',
+                component='telegram_outbound_media_message',
+                type='good_outbound_media_message',
+                message='Outbound request successful',
+            )
+        else:
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Media message reply not sent: %s'
+                        % validate['message'],
                 status_type=validate['status'],
                 details=validate['details'],
             )
