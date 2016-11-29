@@ -89,9 +89,6 @@ class TelegramTransport(HttpRpcTransport):
         """
         Sets up a webhook to receive updates from Telegram.
         """
-        # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
-        #       webhook setup, and sends requests over HTTPS only. This means
-        #       that a proxy (eg. ngrok, nginx) is needed to run the transport.
         url = self.get_outbound_url('setWebhook')
         http_client = HTTPClient(self.agent_factory())
 
@@ -263,10 +260,6 @@ class TelegramTransport(HttpRpcTransport):
         Handles an inbound callback query, fired when a user makes a selection
         on an inline keyboard.
         """
-        # NOTE: Telegram displays a progress bar until answerCallbackQuery
-        #       is called - this means we have to call this method even if we
-        #       don't intend to send anything to the user
-
         self.log.info(
             'TelegramTransport receiving callback query from %s to %s' % (
                 callback_query['from']['username'], self.bot_username))
