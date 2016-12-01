@@ -54,6 +54,14 @@ class TelegramTransport(HttpRpcTransport):
     # Telegram ids are integers that identify users to the Telegram API
     TELEGRAM_ID = 'telegram_id'
 
+    media_api_path = {
+        'photo': 'sendPhoto',
+        'document': 'sendDocument',
+        'contact': 'sendContact',
+        'venue': 'sendVenue',
+        'location': 'sendLocation',
+    }
+
     @classmethod
     def agent_factory(cls):
         """
@@ -81,9 +89,6 @@ class TelegramTransport(HttpRpcTransport):
         """
         Sets up a webhook to receive updates from Telegram.
         """
-        # NOTE: Telegram currently only supports ports 80, 88, 443 and 8443 for
-        #       webhook setup, and sends requests over HTTPS only. This means
-        #       that a proxy (eg. ngrok, nginx) is needed to run the transport.
         url = self.get_outbound_url('setWebhook')
         http_client = HTTPClient(self.agent_factory())
 
@@ -126,6 +131,18 @@ class TelegramTransport(HttpRpcTransport):
 
     def get_outbound_url(self, path):
         return '%s/%s' % (self.api_url, path)
+
+    def log_inbound(self, update_type, user):
+        """
+        Log the receipt of an inbound update.
+        """
+        if user.get('username') is None:
+            user = user['id']
+        else:
+            user = user['username']
+        self.log.info(
+            'TelegramTransport receiving %s from %s to %s' % (
+                update_type, user, self.bot_username))
 
     @inlineCallbacks
     def handle_raw_inbound_message(self, message_id, request):
@@ -184,15 +201,10 @@ class TelegramTransport(HttpRpcTransport):
             return
 
         message = self.translate_inbound_message(update['message'])
-
-        # For logging purposes only
-        if message['telegram_username'] is None:
-            user = message['from_addr']
-        else:
-            user = message['telegram_username']
-        self.log.info(
-            'TelegramTransport receiving inbound message from %s to %s' % (
-                user, self.bot_username))
+        self.log_inbound('message', {
+            'id': message['from_addr'],
+            'username': message['telegram_username'],
+        })
 
         yield self.publish_message(
             message_id=message_id,
@@ -255,13 +267,7 @@ class TelegramTransport(HttpRpcTransport):
         Handles an inbound callback query, fired when a user makes a selection
         on an inline keyboard.
         """
-        # NOTE: Telegram displays a progress bar until answerCallbackQuery
-        #       is called - this means we have to call this method even if we
-        #       don't intend to send anything to the user
-
-        self.log.info(
-            'TelegramTransport receiving callback query from %s to %s' % (
-                callback_query['from']['username'], self.bot_username))
+        self.log_inbound('callback query', callback_query['from'])
 
         yield self.publish_message(
             message_id=message_id,
@@ -296,14 +302,7 @@ class TelegramTransport(HttpRpcTransport):
         """
         Handles an inbound inline query from a Telegram user.
         """
-        # For logging purposes only
-        if inline_query['from'].get('username') is None:
-            user = inline_query['from']['id']
-        else:
-            user = inline_query['from']['username']
-        self.log.info(
-            'TelegramTransport receiving inline query from %s to %s' % (
-                user, self.bot_username))
+        self.log_inbound('inline query', inline_query['from'])
 
         yield self.publish_message(
             message_id=message_id,
@@ -359,6 +358,7 @@ class TelegramTransport(HttpRpcTransport):
     @inlineCallbacks
     def handle_outbound_message(self, message):
         message_id = message['message_id']
+        metadata = message['helper_metadata'].get('telegram')
 
         # Handle replies to inline queries separately
         if message['transport_metadata'].get('type') == 'inline_query':
@@ -369,6 +369,13 @@ class TelegramTransport(HttpRpcTransport):
         if message['transport_metadata'].get('type') == 'callback_query':
             yield self.handle_outbound_callback_query(message_id, message)
             return
+
+        # Handle messages with media attachments
+        if metadata is not None:
+            attachment = metadata.get('attachment')
+            if attachment is not None:
+                yield self.handle_outbound_media_message(message_id, message)
+                return
 
         outbound_msg = {
             'chat_id': message['to_addr'],
@@ -381,10 +388,8 @@ class TelegramTransport(HttpRpcTransport):
             outbound_msg.update({'reply_to_message_id': telegram_msg_id})
 
         # Handle message formatting options (pass if none are provided)
-        try:
-            outbound_msg.update(message['helper_metadata']['telegram'])
-        except KeyError:
-            pass
+        if metadata is not None:
+            outbound_msg.update(metadata)
 
         url = self.get_outbound_url('sendMessage')
         http_client = HTTPClient(self.agent_factory())
@@ -403,6 +408,55 @@ class TelegramTransport(HttpRpcTransport):
             yield self.outbound_failure(
                 message_id=message_id,
                 message='Message not sent: %s' % validate['message'],
+                status_type=validate['status'],
+                details=validate['details'],
+            )
+
+    @inlineCallbacks
+    def handle_outbound_media_message(self, message_id, message):
+        """
+        Handles an outbound message that contains embedded media.
+        """
+        att = message['helper_metadata']['telegram']['attachment']
+        try:
+            url = self.get_outbound_url(self.media_api_path[att['type']])
+        except KeyError:
+            self.log.info('Unsupported attachment type: %s' % att.get('type'))
+            return
+
+        http_client = HTTPClient(self.agent_factory())
+        params = {
+            'chat_id': message['to_addr'],
+        }
+        params.update(att)
+        del params['type']
+
+        # Handle direct replies
+        if message['in_reply_to'] is not None:
+            telegram_msg_id = message['transport_metadata']['telegram_msg_id']
+            params.update({'reply_to_message_id': telegram_msg_id})
+
+        r = yield http_client.post(
+            url=url,
+            data=json.dumps(params),
+            headers={'Content-Type': ['application/json']},
+            allow_redirects=False,
+        )
+
+        validate = yield self.validate_outbound(r)
+        if validate['success']:
+            yield self.outbound_success(message_id)
+            self.add_status(
+                status='ok',
+                component='telegram_outbound_media_message',
+                type='good_outbound_media_message',
+                message='Outbound request successful',
+            )
+        else:
+            yield self.outbound_failure(
+                message_id=message_id,
+                message='Media message not sent: %s'
+                        % validate['message'],
                 status_type=validate['status'],
                 details=validate['details'],
             )
