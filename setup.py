@@ -5,7 +5,7 @@ setup(
     url='https://github.com/praekelt/vumi-telegram',
     license='BSD',
     description='A Telegram transport for Vumi and Junebug',
-    long_description=open('README.md', 'r').read(),
+    long_description=open('README.rst', 'r').read(),
     author='Praekelt Foundation',
     author_email='dev@praekeltfoundation.org',
     packages=find_packages(),
