@@ -47,7 +47,7 @@ To create the channel and launch the transport, we can post the channel's config
 
     {
         "type": "telegram",
-        "amqp_queue": "messenger_transport",
+        "amqp_queue": "telegram_transport",
         "config": {
             "web_path": "/telegram",
             "web_port": 8000,
