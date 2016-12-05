@@ -114,15 +114,10 @@ See the Telegram API docs_ for more information, including what limitations appl
 Inline queries
 ~~~~~~~~~~~~~~
 
-When the transport receives an inline query, it publishes a message that contains the following ``transport_metadata`` and ``helper_metadata``:
+When the transport receives an inline query, it publishes a message that contains the following ``helper_metadata``:
 
 .. code-block:: python
 
-    transport_metadata={
-        'type': 'inline_query',
-        'details': {'inline_query_id': INLINE_QUERY_ID},
-        'telegram_username': TELEGRAM_USERNAME,
-    },
     helper_metadata={
         'telegram': {
             'type': 'inline_query',
@@ -133,7 +128,7 @@ When the transport receives an inline query, it publishes a message that contain
 
 The ``content`` field contains the text of the inline query.
 
-When answering inline queries, your application should reply directly to the message containing the query to ensure that the ``transport_metadata`` is not lost, and the transport can access the inline query ID. A response to an inline query should have the following structure:
+When answering inline queries, your application should reply directly to the message containing the query (as opposed to using the application's ``send_to`` method). A response to an inline query should have the following structure:
 
 .. code-block:: python
 
@@ -163,11 +158,6 @@ Using the parameter ``reply_markup``, it is possible to send a message with an i
 
 .. code-block:: python
 
-    transport_metadata={
-        'type': 'callback_query',
-        'details': {'callback_query_id': CALLBACK_QUERY_ID},
-        'telegram_username': TELEGRAM_USERNAME,
-    },
     helper_metadata={
         'telegram': {
             'type': 'callback_query',
@@ -191,14 +181,12 @@ The ``content`` field contains the callback data. You can respond to a callback 
 
 See the answerCallbackQuery_ documentation to find out what parameters you can use. Also note that when a user selects a button on an inline keyboard, a progress icon is displayed until ``answerCallbackQuery`` is called. Because of this, it is important to always respond to callback queries, even if you have nothing to send.
 
-As with inline queries, make sure that your response is a direct reply to the original callback query message, so that the ``transport_metadata`` (which contains the callback query ID) is not lost.
+As with inline queries, make sure that your response is a direct reply to the original callback query message.
 
 Things to note
 ==============
 
-All inbound messages received by the transport are published with ``from_addr`` being the sender's Telegram user ID. However, since the ID is an simply integer, the transport will always include the user's username in ``transport_metadata``, under the field ``telegram_username``. This allows for more clarity in logs and statuses.
-
-All text messages also contain the Telegram message ID under the field ``telegram_msg_id``, for use by the transport in sending replies.
+All inbound messages received by the transport are published with ``from_addr`` being the sender's Telegram user ID. However, since the ID is an simply integer, the transport will always include the user's username in ``helper_metadata``, under the field ``telegram_username``. This allows for more clarity in logs and statuses.
 
 User profile information
 ~~~~~~~~~~~~~~~~~~~~~~~~
