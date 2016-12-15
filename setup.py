@@ -2,6 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='vumi-telegram',
+    version=open('VERSION', 'r').read().strip(),
     url='https://github.com/praekelt/vumi-telegram',
     license='BSD',
     description='A Telegram transport for Vumi and Junebug',
