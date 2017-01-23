@@ -269,25 +269,26 @@ class TelegramTransport(HttpRpcTransport):
         """
         self.log_inbound('callback query', callback_query['from'])
 
+        metadata = {
+           'type': 'callback_query',
+           'reply': callback_query.get('data'),
+           'details': {'callback_query_id': callback_query['id']},
+        }
+        telegram_username = callback_query['from'].get('username')
+        if telegram_username:
+            metadata['telegram_username'] = telegram_username
+
         yield self.publish_message(
             message_id=message_id,
-            content=callback_query.get('data'),
+            content='',
             to_addr=self.bot_username,
             to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=callback_query['from']['id'],
             from_addr_type=self.TELEGRAM_ID,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
-            helper_metadata={'telegram': {
-                'type': 'callback_query',
-                'details': {'callback_query_id': callback_query['id']},
-                'telegram_username': callback_query['from']['username'],
-            }},
-            transport_metadata={
-                'type': 'callback_query',
-                'details': {'callback_query_id': callback_query['id']},
-                'telegram_username': callback_query['from']['username'],
-            },
+            helper_metadata={'telegram': metadata},
+            transport_metadata=metadata,
         )
 
         yield self.add_status(
@@ -304,25 +305,27 @@ class TelegramTransport(HttpRpcTransport):
         """
         self.log_inbound('inline query', inline_query['from'])
 
+
+        metadata = {
+           'type': 'callback_query',
+           'reply': inline_query['query'],
+           'details': {'callback_query_id': callback_query['id']},
+        }
+        telegram_username = callback_query['from'].get('username')
+        if telegram_username:
+            metadata['telegram_username'] = telegram_username
+
         yield self.publish_message(
             message_id=message_id,
-            content=inline_query['query'],
+            content='',
             to_addr=self.bot_username,
             to_addr_type=self.TELEGRAM_USERNAME,
             from_addr=inline_query['from']['id'],
             from_addr_type=self.TELEGRAM_ID,
             transport_type=self.transport_type,
             transport_name=self.transport_name,
-            helper_metadata={'telegram': {
-                'type': 'inline_query',
-                'details': {'inline_query_id': inline_query['id']},
-                'telegram_username': inline_query['from'].get('username'),
-            }},
-            transport_metadata={
-                'type': 'inline_query',
-                'details': {'inline_query_id': inline_query['id']},
-                'telegram_username': inline_query['from'].get('username'),
-            },
+            helper_metadata={'telegram': metadata},
+            transport_metadata=metadata,
         )
 
         yield self.add_status(
@@ -383,9 +386,10 @@ class TelegramTransport(HttpRpcTransport):
         }
 
         # Handle direct replies
-        if message['in_reply_to'] is not None:
-            telegram_msg_id = message['transport_metadata']['telegram_msg_id']
-            outbound_msg.update({'reply_to_message_id': telegram_msg_id})
+        if message.get('in_reply_to') is not None:
+            telegram_msg_id = message['transport_metadata'].get('telegram_msg_id')
+            if telegram_msg_id:
+                outbound_msg.update({'reply_to_message_id': telegram_msg_id})
 
         # Handle message formatting options (pass if none are provided)
         if metadata is not None:
